@@ -5,14 +5,10 @@
 { config, pkgs, lib, ... }:
 
 
-let
-  home-manager = builtins.fetchTarball https://github.com/nix-community/home-manager/archive/release-25.11.tar.gz;
-in
 {
   imports =
     [ # Include the results of the hardware scan.
       ./hardware-configuration.nix
-      (import "${home-manager}/nixos")
     ];
 
   # Bootloader.
@@ -153,89 +149,6 @@ in
     shell = pkgs.fish;
   };
 
-  home-manager.useGlobalPkgs = true;
-
-  home-manager.users.zoe = { pkgs, lib, ... }: {
-    # Home Manager needs a bit of information about you and the
-    # paths it should manage.
-    home.username = "zoe";
-    home.homeDirectory = "/home/zoe";
-
-    home.packages = [
-      pkgs.fortune
-      (pkgs.discord.override {
-        withOpenASAR = true; # can do this here too
-        withVencord = true;
-      })
-      (pkgs.prismlauncher.override {
-        # Add binary required by some mod
-        additionalPrograms = [ pkgs.ffmpeg ];
-
-        # Change Java runtimes available to Prism Launcher
-        jdks = [
-          pkgs.graalvmPackages.graalvm-ce
-          pkgs.zulu8
-          pkgs.zulu17
-          pkgs.zulu
-        ];
-      })
-      pkgs.google-chrome
-      pkgs.htop
-      pkgs.chntpw
-      pkgs.spotify
-    ];
-
-    programs.git = {
-      enable = true;
-      settings = {
-        user = {
-          email = "git@zoe.dev.br";
-          name = "Zoe Leullier";
-        };
-        gpg = {
-          format = "ssh";
-        };
-        "gpg \"ssh\"" = {
-          program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
-        };
-        commit = {
-          gpgsign = true;
-        };
-        safe = {
-          directory = "/etc/nixos";
-        };
-      };
-    };
-
-    programs.ssh = {
-      enable = true;
-      extraConfig = ''
-        Host *
-            IdentityAgent "~/.1password/agent.sock"
-      '';
-    };
-
-    programs.vscode = {
-      enable = true;
-    };
-
-    services.mpris-proxy.enable = true;
-
-    home.file."/home/zoe/.config/fish/conf.d/no-hello.fish" = {
-      text = "set -g fish_greeting";
-      enable = true;
-    };
-
-    # This value determines the Home Manager release that your configuration is
-    # compatible with. This helps avoid breakage when a new Home Manager release
-    # introduces backwards incompatible changes.
-    #
-    # You should not change this value, even if you update Home Manager. If you do
-    # want to update the value, then make sure to first check the Home Manager
-    # release notes.
-    home.stateVersion = "25.11"; # Please read the comment before changing.
-  };
-
   programs.steam = {
     enable = true;
     remotePlay.openFirewall = true; # Open ports in the firewall for Steam Remote Play
@@ -256,6 +169,7 @@ in
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # List packages installed in system profile. To search, run:
   # $ nix search wget
