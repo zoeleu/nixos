@@ -157,6 +157,9 @@
     ];
   };
 
+  programs.alvr.enable = true;
+  programs.alvr.openFirewall = true;
+
   programs._1password.enable = true;
   programs._1password-gui = {
     enable = true;
