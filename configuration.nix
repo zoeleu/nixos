@@ -1,0 +1,313 @@
+# Edit this configuration file to define what should be installed on
+# your system.  Help is available in the configuration.nix(5) man page
+# and in the NixOS manual (accessible by running ‘nixos-help’).
+
+{ config, pkgs, lib, ... }:
+
+
+let
+  home-manager = builtins.fetchTarball https://github.com/nix-community/home-manager/archive/release-25.11.tar.gz;
+in
+{
+  imports =
+    [ # Include the results of the hardware scan.
+      ./hardware-configuration.nix
+      (import "${home-manager}/nixos")
+    ];
+
+  # Bootloader.
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.efi.canTouchEfiVariables = true;
+
+  # Use latest kernel.
+  boot.kernelPackages = pkgs.linuxPackages_latest;
+
+  fileSystems =
+  let
+    ntfs-drives = [
+      "/mnt/win"
+    ];
+  in
+  lib.genAttrs ntfs-drives (path: {
+    options = [
+      "uid=1000" # REPLACE "$UID" WITH YOUR ACTUAL UID!
+      # "nofail"
+      "force"
+    ];
+  });
+
+
+  boot.extraModprobeConfig = ''
+    # Keep Bluetooth coexistence disabled for better BT audio stability
+    options iwlwifi bt_coex_active=0
+
+    # Enable software crypto (helps BT coexistence sometimes)
+    options iwlwifi swcrypto=1
+
+    # Disable power saving on Wi-Fi module to reduce radio state changes that might disrupt BT
+    options iwlwifi power_save=0
+
+    # Disable Unscheduled Automatic Power Save Delivery (U-APSD) to improve BT audio stability
+    options iwlwifi uapsd_disable=1
+
+    # Disable D0i3 power state to avoid problematic power transitions
+    options iwlwifi d0i3_disable=1
+
+    # Set power scheme for performance (iwlmvm)
+    options iwlmvm power_scheme=1
+  '';
+
+  hardware.bluetooth.enable = true;
+  hardware.bluetooth.settings = {
+    General = {
+      ControllerMode = "bredr";
+      Experimental = true;
+      FastConnectable = true;
+    };
+  };
+
+  networking.hostName = "desktop"; # Define your hostname.
+  # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
+
+  # Configure network proxy if necessary
+  # networking.proxy.default = "http://user:password@proxy:port/";
+  # networking.proxy.noProxy = "127.0.0.1,localhost,internal.domain";
+
+  # Enable networking
+  networking.networkmanager.enable = true;
+
+  # Set your time zone.
+  time.timeZone = "America/Sao_Paulo";
+
+  # Select internationalisation properties.
+  i18n.defaultLocale = "en_US.UTF-8";
+
+  i18n.extraLocaleSettings = {
+    LC_ADDRESS = "pt_BR.UTF-8";
+    LC_IDENTIFICATION = "pt_BR.UTF-8";
+    LC_MEASUREMENT = "pt_BR.UTF-8";
+    LC_MONETARY = "pt_BR.UTF-8";
+    LC_NAME = "pt_BR.UTF-8";
+    LC_NUMERIC = "pt_BR.UTF-8";
+    LC_PAPER = "pt_BR.UTF-8";
+    LC_TELEPHONE = "pt_BR.UTF-8";
+    LC_TIME = "pt_BR.UTF-8";
+  };
+
+  # Enable the X11 windowing system.
+  # You can disable this if you're only using the Wayland session.
+  services.xserver.enable = true;
+
+  # Enable the KDE Plasma Desktop Environment.
+  services.displayManager.sddm.enable = true;
+  services.desktopManager.plasma6.enable = true;
+
+  # Configure keymap in X11
+  services.xserver.xkb = {
+    layout = "us";
+    variant = "intl";
+  };
+
+  # Configure console keymap
+  console.keyMap = "us-acentos";
+
+  # Enable CUPS to print documents.
+  services.printing.enable = true;
+
+  # Enable sound with pipewire.
+  services.pulseaudio.enable = false;
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+    # If you want to use JACK applications, uncomment this
+    #jack.enable = true;
+
+    # use the example session manager (no others are packaged yet so this is enabled by default,
+    # no need to redefine it in your config for now)
+    #media-session.enable = true;
+  };
+
+  services.pipewire.wireplumber.extraConfig."11-bluetooth-policy" = {
+    "wireplumber.settings" = {
+      "bluetooth.autoswitch-to-headset-profile" = false;
+    };
+  };
+
+  # Enable touchpad support (enabled default in most desktopManager).
+  # services.xserver.libinput.enable = true;
+
+  programs.fish.enable = true;
+
+  # Define a user account. Don't forget to set a password with ‘passwd’.
+  users.users.zoe = {
+    isNormalUser = true;
+    description = "Zoe Leullier";
+    extraGroups = [ "networkmanager" "wheel" ];
+    packages = with pkgs; [
+      kdePackages.kate
+    #  thunderbird
+    ];
+    shell = pkgs.fish;
+  };
+
+  home-manager.useGlobalPkgs = true;
+
+  home-manager.users.zoe = { pkgs, lib, ... }: {
+    # Home Manager needs a bit of information about you and the
+    # paths it should manage.
+    home.username = "zoe";
+    home.homeDirectory = "/home/zoe";
+
+    home.packages = [
+      pkgs.fortune
+      (pkgs.discord.override {
+        withOpenASAR = true; # can do this here too
+        withVencord = true;
+      })
+      (pkgs.prismlauncher.override {
+        # Add binary required by some mod
+        additionalPrograms = [ pkgs.ffmpeg ];
+
+        # Change Java runtimes available to Prism Launcher
+        jdks = [
+          pkgs.graalvmPackages.graalvm-ce
+          pkgs.zulu8
+          pkgs.zulu17
+          pkgs.zulu
+        ];
+      })
+      pkgs.google-chrome
+      pkgs.htop
+      pkgs.chntpw
+      pkgs.spotify
+    ];
+
+    programs.git = {
+      enable = true;
+      settings = {
+        user = {
+          email = "git@zoe.dev.br";
+          name = "Zoe Leullier";
+        };
+        gpg = {
+          format = "ssh";
+        };
+        "gpg \"ssh\"" = {
+          program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
+        };
+        commit = {
+          gpgsign = true;
+        };
+        safe = {
+          directory = "/etc/nixos";
+        };
+      };
+    };
+
+    programs.ssh = {
+      enable = true;
+      extraConfig = ''
+        Host *
+            IdentityAgent "~/.1password/agent.sock"
+      '';
+    };
+
+    programs.vscode = {
+      enable = true;
+    };
+
+    services.mpris-proxy.enable = true;
+
+    home.file."/home/zoe/.config/fish/conf.d/no-hello.fish" = {
+      text = "set -g fish_greeting";
+      enable = true;
+    };
+
+    # This value determines the Home Manager release that your configuration is
+    # compatible with. This helps avoid breakage when a new Home Manager release
+    # introduces backwards incompatible changes.
+    #
+    # You should not change this value, even if you update Home Manager. If you do
+    # want to update the value, then make sure to first check the Home Manager
+    # release notes.
+    home.stateVersion = "25.11"; # Please read the comment before changing.
+  };
+
+  programs.steam = {
+    enable = true;
+    remotePlay.openFirewall = true; # Open ports in the firewall for Steam Remote Play
+    extraCompatPackages = with pkgs; [
+      proton-ge-bin
+    ];
+  };
+
+  programs._1password.enable = true;
+  programs._1password-gui = {
+    enable = true;
+    # Certain features, including CLI integration and system authentication support,
+    # require enabling PolKit integration on some desktop environments (e.g. Plasma).
+    polkitPolicyOwners = [ "zoe" ];
+  };
+
+  environment.sessionVariables.NIXOS_OZONE_WL = "1";
+
+  # Allow unfree packages
+  nixpkgs.config.allowUnfree = true;
+
+  # List packages installed in system profile. To search, run:
+  # $ nix search wget
+  environment.systemPackages = with pkgs; [
+    distrobox
+    wl-clipboard
+  ];
+
+  virtualisation.podman = {
+    enable = true;
+    dockerCompat = true;
+  };
+
+  virtualisation.waydroid = {
+    enable = true;
+    package = pkgs.waydroid-nftables;
+  };
+
+  # Some programs need SUID wrappers, can be configured further or are
+  # started in user sessions.
+  # programs.mtr.enable = true;
+  # programs.gnupg.agent = {
+  #   enable = true;
+  #   enableSSHSupport = true;
+  # };
+
+  # List services that you want to enable:
+
+  # Enable the OpenSSH daemon.
+  services.openssh = {
+    enable = true;
+    ports = [ 2222 ];
+    settings = {
+      PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
+      PermitRootLogin = "no";
+      AllowUsers = [ "zoe" ];
+    };
+  };
+
+  # Open ports in the firewall.
+  # networking.firewall.allowedTCPPorts = [ ... ];
+  # networking.firewall.allowedUDPPorts = [ ... ];
+  # Or disable the firewall altogether.
+  # networking.firewall.enable = false;
+
+  # This value determines the NixOS release from which the default
+  # settings for stateful data, like file locations and database versions
+  # on your system were taken. It‘s perfectly fine and recommended to leave
+  # this value at the release version of the first install of this system.
+  # Before changing this value read the documentation for this option
+  # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
+  system.stateVersion = "25.11"; # Did you read the comment?
+
+}
