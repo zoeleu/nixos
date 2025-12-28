@@ -31,6 +31,7 @@ in
       pkgs.htop
       pkgs.chntpw
       pkgs.spotify
+      pkgs.distroshelf
     ];
 
     programs.git = {
