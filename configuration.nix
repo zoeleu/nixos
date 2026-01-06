@@ -210,6 +210,28 @@
     };
   };
 
+
+  services.flatpak.enable = true;
+
+  services.flatpak = {
+    remotes = [
+      {
+        name = "flathub-beta"; location = "https://flathub.org/beta-repo/flathub-beta.flatpakrepo";
+      }
+      {
+        name = "flathub"; location = "https://dl.flathub.org/repo/flathub.flatpakrepo";
+      }
+    ];
+    packages = [
+      { appId = "com.stremio.Stremio"; origin = "flathub-beta";  }
+    ];
+  };
+
+  xdg.portal = {
+    enable = true;
+    xdgOpenUsePortal = true;
+  };
+
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
   # networking.firewall.allowedUDPPorts = [ ... ];

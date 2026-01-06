@@ -10,14 +10,19 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    flatpaks.url = "github:gmodena/nix-flatpak/?ref=v0.6.0";
+
   };
 
-  outputs = { self, nixpkgs, rust-overlay, home-manager, ... }@inputs: {
+  outputs = { self, nixpkgs, rust-overlay, home-manager, flatpaks, ... }@inputs: {
     nixosConfigurations.desktop = nixpkgs.lib.nixosSystem {
       modules = [
         # Import the previous configuration.nix we used,
         # so the old configuration file still takes effect
         ./configuration.nix
+
+        flatpaks.nixosModules.nix-flatpak
+
         home-manager.nixosModules.home-manager
           {
             home-manager.useGlobalPkgs = true;
