@@ -32,6 +32,8 @@ in
       pkgs.chntpw
       pkgs.spotify
       pkgs.distroshelf
+
+      pkgs.jetbrains.idea
     ];
 
     programs.git = {
