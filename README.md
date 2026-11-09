@@ -60,9 +60,20 @@ into zoe, key-only SSH.
 ## CI / binary cache
 
 `.github/workflows/build.yml` builds every host on each push and weekly
-(with `nix flake update`), and pushes what it compiled to Cachix. Unfree
-packages (Steam, claude-code, ...) and anything depending on them are never
-pushed, since the cache is public.
+(with `nix flake update`):
+
+1. Each slow package (`ci.heavyPackages`: kernel, Mesa, PipeWire from
+   `modules/ci.nix`, plus per-host extras) builds in its own job, all on
+   separate runners at the same time.
+2. Then each host's full system builds, downloading those from the cache.
+
+Every job pushes each compiled package to Cachix as soon as it finishes,
+and pushes whatever finished even if the build fails. Unfree packages
+(Steam, claude-code, ...) and anything depending on them are never pushed,
+since the cache is public.
+
+To add a slow package to the parallel jobs, add it to `ci.heavyPackages` in
+the host's `default.nix`.
 
 Cache: https://zoeleu.cachix.org. Setup: repo variable `CACHIX_CACHE` (cache name) and secret
 `CACHIX_AUTH_TOKEN`, then add the cache's URL and public key in

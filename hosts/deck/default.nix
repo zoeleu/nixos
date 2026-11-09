@@ -82,6 +82,13 @@
   nix.settings.max-jobs = 2;
   nix.settings.cores = 4;
 
+  # Jovian's patched packages that take long to compile; CI builds each in
+  # its own parallel job (kernel, Mesa and PipeWire come from modules/ci.nix)
+  ci.heavyPackages = with pkgs.jovianPackages; {
+    inputplumber = config.services.inputplumber.package;
+    inherit steamos-manager mangohud scx-scheds vpower;
+  };
+
   home-manager.users.zoe.home.stateVersion = "26.11"; # never change
   system.stateVersion = "26.11"; # first install's version, never change
 }

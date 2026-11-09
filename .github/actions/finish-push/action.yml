@@ -1,0 +1,43 @@
+name: Finish pushing to Cachix
+description: >
+  Lets the background pusher (started by ./.github/actions/setup) drain its
+  queue, then pushes anything it missed. Run with `if: always()` so packages
+  that finished are kept even when the build failed.
+
+inputs:
+  cachix-cache:
+    description: Cachix cache name
+    default: ""
+  cachix-token:
+    description: Cachix auth token
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Finish pushing to Cachix
+      if: always() && env.CACHIX_PUSHING == '1'
+      shell: bash
+      env:
+        CACHE: ${{ inputs.cachix-cache }}
+        CACHIX_AUTH_TOKEN: ${{ inputs.cachix-token }}
+      run: |
+        echo DONE >> /tmp/built-paths
+        pid=$(cat /tmp/pusher.pid)
+        for _ in $(seq 1 900); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+        echo "::group::Live pushes"; cat /tmp/pusher.log; echo "::endgroup::"
+
+        # Final sweep: everything compiled in this job, minus unfree paths and
+        # everything depending on them. Already-pushed paths are skipped by cachix.
+        grep '^/nix/store/' /tmp/built-paths | sort -u > built || true
+        { if [ -e result ]; then nix path-info -r ./result; fi; cat built; } \
+          | sort -u | grep -E "$UNFREE_FILTER" > unfree || true
+        if [ -s unfree ]; then
+          xargs nix-store --query --referrers-closure < unfree | sort -u > tainted
+        else
+          : > tainted
+        fi
+        comm -23 built tainted > to-push
+        n_built=$(wc -l < built); n_push=$(wc -l < to-push)
+        echo "Compiled: $n_built, skipped (unfree or depends on unfree): $((n_built - n_push)), pushing: $n_push"
+        if [ -s to-push ]; then xargs cachix push "$CACHE" < to-push; fi

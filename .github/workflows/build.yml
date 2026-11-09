@@ -1,12 +1,17 @@
 # Builds every machine in ./hosts and pushes the results to Cachix, so the
 # machines download instead of compiling.
 #
+#   prepare  - (weekly: nix flake update), list hosts and their slow packages
+#   heavy    - one parallel job per slow package (ci.heavyPackages, see modules/ci.nix)
+#   build    - one job per host: the full system; slow packages come from Cachix
+#   commit   - weekly: commit the new flake.lock if every host built
+#
+# Every job pushes each compiled package to Cachix as soon as it's built
+# (unfree packages and anything depending on them are never pushed).
+#
 # Setup (once):
 #   - repo variable  CACHIX_CACHE      = your cache name   (Settings > Secrets and variables > Actions > Variables)
 #   - repo secret    CACHIX_AUTH_TOKEN = a cachix auth token (... > Secrets)
-#
-# Weekly (and on manual run with "update" ticked): runs `nix flake update`,
-# builds everything, and commits the new flake.lock only if all hosts built.
 name: Build
 
 on:
@@ -33,7 +38,8 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      hosts: ${{ steps.hosts.outputs.hosts }}
+      hosts: ${{ steps.list.outputs.hosts }}
+      heavy: ${{ steps.list.outputs.heavy }}
       updated: ${{ steps.update.outputs.updated }}
     steps:
       - uses: actions/checkout@v4
@@ -56,97 +62,83 @@ jobs:
           name: flake-lock
           path: flake.lock
 
-      - name: List hosts
-        id: hosts
-        run: echo "hosts=$(nix eval --json .#nixosConfigurations --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+      - name: List hosts and slow packages
+        id: list
+        run: |
+          echo "hosts=$(nix eval --json .#nixosConfigurations --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+          heavy=$(nix eval --json .#nixosConfigurations --apply '
+            cs: builtins.concatLists (map (host:
+              map (pkg: { inherit host pkg; })
+                (builtins.attrNames cs.${host}.config.ci.heavyPackages))
+              (builtins.attrNames cs))')
+          echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
+          echo "$heavy" | jq -r '.[] | "\(.host): \(.pkg)"'
+
+  heavy:
+    needs: prepare
+    if: needs.prepare.outputs.heavy != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.heavy) }}
+    name: heavy (${{ matrix.host }} / ${{ matrix.pkg }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: flake-lock
+
+      - uses: ./.github/actions/setup
+        with:
+          host: ${{ matrix.host }}
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          push: ${{ github.event_name != 'pull_request' }}
+
+      - name: Build ${{ matrix.pkg }}
+        run: nix build --print-build-logs .#nixosConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
+
+      - uses: ./.github/actions/finish-push
+        if: always()
+        with:
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   build:
-    needs: prepare
+    needs: [prepare, heavy]
+    # also run if a heavy job failed: what did build is in the cache, and the
+    # failure then shows up here with the full system's context
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
         host: ${{ fromJSON(needs.prepare.outputs.hosts) }}
     name: build (${{ matrix.host }})
     steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
-          df -h /
-
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: flake-lock
 
-      - uses: cachix/install-nix-action@v31
-
-      - name: Use the host's binary caches, record what gets compiled
-        run: |
-          subs=$(nix eval --raw .#nixosConfigurations.${{ matrix.host }}.config.nix.settings.substituters --apply 'builtins.concatStringsSep " "')
-          keys=$(nix eval --raw .#nixosConfigurations.${{ matrix.host }}.config.nix.settings.trusted-public-keys --apply 'builtins.concatStringsSep " "')
-          # Runs after every *local* build (not downloads): log its outputs
-          printf '#!/bin/sh\necho "$OUT_PATHS" | tr " " "\\n" >> /tmp/built-paths\n' | sudo tee /etc/nix/record-built
-          sudo chmod 755 /etc/nix/record-built
-          sudo touch /tmp/built-paths; sudo chmod 666 /tmp/built-paths
-          {
-            echo "extra-substituters = $subs"
-            echo "extra-trusted-public-keys = $keys"
-            echo "post-build-hook = /etc/nix/record-built"
-          } | sudo tee -a /etc/nix/nix.conf
-          sudo systemctl restart nix-daemon
-
-      # Unfree software (Steam, claude-code, ...) may not be redistributed,
-      # so it never goes to the (public) cache.
-      - name: Find unfree packages
-        id: unfree
-        env:
-          HOST: ${{ matrix.host }}
-        run: |
-          names=$(nix eval --impure --raw --file ci/unfree-names.nix 2>&1 >/dev/null \
-            | sed -n 's/^trace: UNFREE //p' | sort -u)
-          echo "Unfree (not pushed):"; echo "$names"
-          if [ -z "$names" ]; then
-            filter='^$'
-          else
-            alt=$(echo "$names" | sed 's/[][\.*^$+?(){}|]/\\&/g' | paste -sd'|')
-            filter="^/nix/store/[a-z0-9]{32}-($alt)(-[0-9][^/]*)?$"
-          fi
-          echo "filter=$filter" >> "$GITHUB_OUTPUT"
-
-      # Installs cachix and adds our cache as a download source; pushing is
-      # done by hand below so unfree paths can be excluded.
-      - uses: cachix/cachix-action@v16
-        if: vars.CACHIX_CACHE != ''
+      - uses: ./.github/actions/setup
         with:
-          name: ${{ vars.CACHIX_CACHE }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: true
+          host: ${{ matrix.host }}
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build ${{ matrix.host }}
         run: nix build --print-build-logs .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
 
-      - name: Push compiled free packages to Cachix
-        if: vars.CACHIX_CACHE != '' && github.event_name != 'pull_request'
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          CACHE: ${{ vars.CACHIX_CACHE }}
-          FILTER: ${{ steps.unfree.outputs.filter }}
-        run: |
-          sort -u /tmp/built-paths | sed '/^$/d' > built
-          # Unfree paths, plus everything that depends on them (wrappers, the
-          # system itself). cachix pushes each path's dependencies too, so
-          # excluding all dependents guarantees no unfree path is uploaded.
-          { nix path-info -r ./result; cat built; } | sort -u | grep -E "$FILTER" > unfree || true
-          if [ -s unfree ]; then
-            xargs nix-store --query --referrers-closure < unfree | sort -u > tainted
-          else
-            : > tainted
-          fi
-          comm -23 built tainted > to-push
-          n_built=$(wc -l < built); n_push=$(wc -l < to-push)
-          echo "Compiled: $n_built, skipped (unfree or depends on unfree): $((n_built - n_push)), pushing: $n_push"
-          if [ -s to-push ]; then xargs cachix push "$CACHE" < to-push; fi
+      - uses: ./.github/actions/finish-push
+        if: always()
+        with:
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   commit:
     needs: [prepare, build]

@@ -27,6 +27,7 @@
         modules = [
           home-manager.nixosModules.home-manager
           ./modules/common.nix
+          ./modules/ci.nix
           ./hosts/${name}
           { networking.hostName = lib.mkDefault name; }
         ];
