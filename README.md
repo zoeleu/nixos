@@ -64,6 +64,6 @@ into zoe, key-only SSH.
 packages (Steam, claude-code, ...) and anything depending on them are never
 pushed, since the cache is public.
 
-Setup: repo variable `CACHIX_CACHE` (cache name) and secret
+Cache: https://zoeleu.cachix.org. Setup: repo variable `CACHIX_CACHE` (cache name) and secret
 `CACHIX_AUTH_TOKEN`, then add the cache's URL and public key in
 `modules/common.nix`.

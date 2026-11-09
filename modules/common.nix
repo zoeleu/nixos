@@ -7,9 +7,9 @@
   nixpkgs.config.allowUnfree = true;
 
   # Our own binary cache, filled by GitHub Actions (.github/workflows/build.yml).
-  # TODO: create the cache on cachix.org, then fill in its name and public key:
-  # nix.settings.substituters = [ "https://CACHE-NAME.cachix.org" ];
-  # nix.settings.trusted-public-keys = [ "CACHE-NAME.cachix.org-1:PUBLIC-KEY" ];
+  # https://app.cachix.org/cache/zoeleu
+  nix.settings.substituters = [ "https://zoeleu.cachix.org" ];
+  nix.settings.trusted-public-keys = [ "zoeleu.cachix.org-1:Zfv7It/TC7pYCabCmPpFfztsKSbEs9dmZqwoBgsQPuQ=" ];
 
   # --- Locale ---
   time.timeZone = "America/Sao_Paulo";
