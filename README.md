@@ -85,6 +85,19 @@ https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
    `hardware-configuration.nix` and `disk.nix` for the host, and made
    `/etc/nixos` zoe's, pushing over SSH).
 
+### Network boot (PXE) instead of a USB stick
+
+The same installer is published at https://nix.zoe.dev.br/netboot/ (kernel +
+initrd + iPXE script). On the home LAN the Deck answers PXE boot requests
+(`hosts/deck/pxe.nix`: dnsmasq proxy-DHCP + TFTP; the TIM router keeps
+handing out addresses) with an iPXE that loads it over HTTPS.
+
+1. The Deck must be on and on the LAN (wifi or the dock's Ethernet).
+2. On the PC (MSI): BIOS > Settings > Advanced > Integrated Peripherals >
+   Network Stack: Enabled, IPv4 PXE Support: Enabled; Secure Boot off.
+3. Boot menu (F11 on MSI) > the network card (UEFI: IPv4). The PC downloads
+   ~2 GB into RAM, then: `install-nixos`.
+
 The ISO clones the latest config from GitHub, so it only needs rebuilding
 when `installer/` changes. Claude Code isn't on it (public download,
 unfree); if needed there: `NIXPKGS_ALLOW_UNFREE=1 nix run --impure nixpkgs#claude-code`.

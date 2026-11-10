@@ -49,6 +49,14 @@ jobs:
           (cd upload && sha256sum nixos-zoe-installer.iso > nixos-zoe-installer.iso.sha256)
           ls -lh upload/
 
+      - name: Build network-boot image
+        run: |
+          nix build --option log-lines 200 -o result-netboot .#installer-netboot
+          mkdir upload/netboot
+          cp -L result-netboot/bzImage result-netboot/initrd result-netboot/netboot.ipxe upload/netboot/
+          (cd upload/netboot && sha256sum bzImage initrd netboot.ipxe > SHA256SUMS)
+          ls -lh upload/netboot/
+
       - uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -67,6 +75,9 @@ jobs:
           # the ISO first (temp name on the server, renamed when complete), then its checksum
           rsync -e "$ssh_cmd" --partial --delay-updates upload/nixos-zoe-installer.iso deploy@vps-main:/
           rsync -e "$ssh_cmd" upload/nixos-zoe-installer.iso.sha256 deploy@vps-main:/
+          # netboot: kernel + initrd first, the iPXE script (which names them) last
+          rsync -e "$ssh_cmd" -r --partial --delay-updates --exclude netboot.ipxe upload/netboot/ deploy@vps-main:netboot/
+          rsync -e "$ssh_cmd" upload/netboot/netboot.ipxe deploy@vps-main:netboot/
           rm -f ~/.ssh/deploy
 
       - name: Check the download
@@ -76,3 +87,7 @@ jobs:
           [ "$want" = "$got" ] || { echo "checksum on nix.zoe.dev.br doesn't match ($got)"; exit 1; }
           size=$(curl -fsSI https://nix.zoe.dev.br/nixos-zoe-installer.iso | awk 'tolower($1)=="content-length:"{print $2}' | tr -d '\r')
           echo "Published https://nix.zoe.dev.br/nixos-zoe-installer.iso ($((size / 1048576)) MB, sha256 $want)"
+          curl -fsSL https://nix.zoe.dev.br/netboot/SHA256SUMS | diff - upload/netboot/SHA256SUMS \
+            || { echo "netboot files on nix.zoe.dev.br don't match"; exit 1; }
+          curl -fsSL https://nix.zoe.dev.br/netboot/netboot.ipxe | diff - upload/netboot/netboot.ipxe
+          echo "Published https://nix.zoe.dev.br/netboot/ (bzImage, initrd, netboot.ipxe)"

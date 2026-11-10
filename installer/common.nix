@@ -1,6 +1,6 @@
-# Installer ISO: the minimal NixOS ISO plus `install-nixos`, which installs
-# a machine from this repo (see install-nixos.sh). Built and published by
-# .github/workflows/iso.yml. It's a public download: free software only.
+# The installer, shared by the ISO (iso.nix) and the network-boot image
+# (netboot.nix): `install-nixos` (see install-nixos.sh) plus what it needs.
+# Both are public downloads: free software only.
 { config, lib, pkgs, modulesPath, inputs, ... }:
 
 let
@@ -26,13 +26,12 @@ let
       openssh       # ssh-keygen (host key)
       jq
     ];
-    # the repo as of this ISO build, if GitHub can't be reached
+    # the repo as of this image build, if GitHub can't be reached
     runtimeEnv.ISO_REPO = "${inputs.self}";
     text = builtins.readFile ./install-nixos.sh;
   };
 in
 {
-  imports = [ "${modulesPath}/installer/cd-dvd/installation-cd-minimal.nix" ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = false; # public download: free software only
@@ -45,7 +44,7 @@ in
     pkgs.cage
     pkgs.firefox
   ];
-  # the minimal ISO turns these off; Firefox needs them
+  # the minimal installer profile turns these off; Firefox needs them
   hardware.graphics.enable = true;
   fonts.fontconfig.enable = lib.mkForce true;
   fonts.enableDefaultPackages = true;
@@ -57,5 +56,4 @@ in
     (Ethernet connects automatically; wifi: nmtui)
   '';
 
-  image.baseName = lib.mkForce "nixos-zoe-installer";
 }

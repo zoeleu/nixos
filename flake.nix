@@ -48,6 +48,7 @@
           ./modules/ci.nix
           ./modules/secrets.nix
           ./modules/auto-upgrade.nix
+          ./modules/avatar.nix
           ./hosts/${name}
           { networking.hostName = lib.mkDefault name; }
         ];
@@ -56,13 +57,21 @@
     {
       nixosConfigurations = lib.genAttrs hosts mkHost;
 
-      # Installer ISO (installer/): nix build .#installer-iso
-      packages.x86_64-linux.installer-iso = (lib.nixosSystem {
-        specialArgs = { inherit inputs; };
-        modules = [
-          ./installer
-          { nixpkgs.hostPlatform = "x86_64-linux"; }
-        ];
-      }).config.system.build.isoImage;
+      # Installer images (installer/), the same installer two ways:
+      #   nix build .#installer-iso       USB stick / Ventoy
+      #   nix build .#installer-netboot   network boot: bzImage, initrd, netboot.ipxe
+      packages.x86_64-linux = let
+        installer = module: lib.nixosSystem {
+          specialArgs = { inherit inputs; };
+          modules = [ module { nixpkgs.hostPlatform = "x86_64-linux"; } ];
+        };
+        netboot = (installer ./installer/netboot.nix).config.system.build;
+      in {
+        installer-iso = (installer ./installer/iso.nix).config.system.build.isoImage;
+        installer-netboot = nixpkgs.legacyPackages.x86_64-linux.symlinkJoin {
+          name = "nixos-zoe-installer-netboot";
+          paths = [ netboot.netbootRamdisk netboot.kernel netboot.netbootIpxeScript ];
+        };
+      };
     };
 }
