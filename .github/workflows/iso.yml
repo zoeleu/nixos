@@ -10,6 +10,11 @@ name: Installer ISO
 
 on:
   workflow_dispatch:
+    inputs:
+      connection_test:
+        description: Only test the connection to vps-main (no ISO build)
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -24,7 +29,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Joins the tailnet as an ephemeral tag:ci device (OAuth client, see the
+  # tailnet policy) and logs in to vps-main as "deploy" via Tailscale SSH.
+  connection-test:
+    if: inputs.connection_test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Reach vps-main
+        run: |
+          tailscale status
+          tailscale ping -c 3 vps-main
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@vps-main \
+            'echo "logged in as $(id -un) on $(hostname)"; id; echo "home: $HOME"; df -h "$HOME"'
+
   iso:
+    if: ${{ !inputs.connection_test }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
