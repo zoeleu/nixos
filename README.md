@@ -5,6 +5,7 @@ NixOS configuration for all my machines, as one flake.
 ```
 flake.nix            # turns every folder in hosts/ into a machine
 modules/common.nix   # system settings shared by all machines
+modules/secrets.nix  # sops-nix secrets (encrypted in secrets/, see .sops.yaml)
 home/common.nix      # zoe's Home Manager config shared by all machines
 hosts/<name>/        # one folder per machine (hostname = folder name)
   default.nix
@@ -41,6 +42,19 @@ Vault server: https://vw.zoe.dev.br (self-hosted Vaultwarden; pick
 In Bitwarden: Settings > Enable SSH agent, and store the SSH keys in the
 vault. Bitwarden starts at login; `ssh`, `git` and commit signing use its
 socket (`~/.bitwarden-ssh-agent.sock`).
+
+## Secrets (sops-nix)
+
+Secrets live encrypted in `secrets/*.yaml` and are decrypted on each machine
+at boot with its SSH host key (`modules/secrets.nix`). `.sops.yaml` lists who
+can decrypt: zoe's age key (Bitwarden `sops: age key`) and every machine.
+
+```bash
+SOPS_AGE_KEY=$(bw get password "sops: age key") sops secrets/attic.yaml   # edit
+```
+
+Currently: `secrets/attic.yaml` (pull token for the private Attic cache).
+The installer adds new machines to `.sops.yaml` automatically.
 
 ## Installing a machine (installer ISO)
 

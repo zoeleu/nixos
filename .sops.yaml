@@ -1,0 +1,11 @@
+# Who can decrypt secrets/*.yaml (sops + age):
+#   - zoe's age key, for editing (Bitwarden item "sops: age key")
+#   - each machine's SSH host key, converted with ssh-to-age; sops-nix
+#     decrypts at boot with /etc/ssh/ssh_host_ed25519_key
+# install-nixos adds new machines here and re-encrypts (sops updatekeys).
+creation_rules:
+  - path_regex: ^secrets/[^/]+\.yaml$
+    key_groups:
+      - age:
+          - age1q64uu742a595pavz26cs9hhk0djmnv6pw5wtvwdt2du40psnz4vq2p99p4 # zoe (admin)
+          - age1rdgmwlf7ljdg96my6w87r4cjmjc5u6dxewtgnfec0vzwq6kteyxqgxmtln # deck

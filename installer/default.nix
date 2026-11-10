@@ -20,6 +20,10 @@ let
       bitwarden-cli # Vaultwarden passwords
       procps        # pkill (closing the SSO kiosk)
       ncurses       # clear
+      sops          # re-encrypt secrets for the new machine
+      ssh-to-age
+      yq-go
+      openssh       # ssh-keygen (host key)
       jq
     ];
     # the repo as of this ISO build, if GitHub can't be reached

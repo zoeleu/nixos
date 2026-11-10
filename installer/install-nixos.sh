@@ -161,6 +161,13 @@ EOF
     else
       echo "No '$item_name' item in the vault yet."
     fi
+    # age key for sops: lets this machine be added to .sops.yaml below
+    age_key=$(bw list items --search "sops: age key" | jq -r '[.[] | select(.name == "sops: age key")][0].login.password // empty')
+    if [ -n "$age_key" ]; then
+      (umask 077; printf '%s\n' "$age_key" > "$SECRETS/age.key")
+      age_key=""
+      echo "Found the sops age key."
+    fi
     # Pull token for the private Attic cache (cache.zoe.dev.br)
     attic_token=$(bw list items --search "nixos: attic" | jq -r '[.[] | select(.name == "nixos: attic")][0].login.password // empty')
     if [ -n "$attic_token" ]; then
@@ -217,6 +224,31 @@ disko --mode destroy,format,mount --yes-wipe-all-disks --flake ".#$host" \
   || die "partitioning failed"
 rm -f /tmp/disk.key "$SECRETS/disk.key"
 
+# --- 5b. secrets: this machine's SSH host key decrypts secrets/*.yaml ---
+# Create the host key now (instead of on first boot) so its age key can be
+# added to .sops.yaml and the secrets re-encrypted before installing.
+mkdir -p /mnt/etc/ssh
+if [ ! -f /mnt/etc/ssh/ssh_host_ed25519_key ]; then
+  ssh-keygen -q -t ed25519 -N "" -C "root@$host" -f /mnt/etc/ssh/ssh_host_ed25519_key
+fi
+host_age=$(ssh-to-age < /mnt/etc/ssh/ssh_host_ed25519_key.pub)
+if grep -q "$host_age" .sops.yaml; then
+  echo "This machine can already decrypt the secrets."
+elif [ -f "$SECRETS/age.key" ]; then
+  # replace an older key for this host, then add this one
+  yq -i "(.creation_rules[0].key_groups[0].age) |= map(select(line_comment != \"$host\"))" .sops.yaml
+  yq -i ".creation_rules[0].key_groups[0].age += [\"$host_age\"] | .creation_rules[0].key_groups[0].age[-1] line_comment = \"$host\"" .sops.yaml
+  for f in secrets/*.yaml; do SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops updatekeys -y "$f"; done
+  git add .sops.yaml secrets
+  echo "Added '$host' to .sops.yaml and re-encrypted the secrets."
+else
+  red "Couldn't add '$host' to the secrets (no 'sops: age key' from the vault)."
+  red "Its secrets (e.g. the Attic cache token) won't decrypt until you add"
+  red "  $host_age"
+  red "to .sops.yaml and run 'sops updatekeys' on secrets/*.yaml."
+fi
+rm -f "$SECRETS/age.key"
+
 # --- 6. install ---
 mkdir -p /mnt/etc
 cp -a "$WORK" /mnt/etc/nixos
@@ -229,9 +261,9 @@ echo
 bold "Installing '$host'. This downloads several GB and may compile a few packages."
 netrc_opts=()
 if [ -f "$SECRETS/netrc" ]; then
-  # the private Attic cache, for this install and for the new system
+  # the private Attic cache, for this install's downloads (the installed
+  # system gets the token from secrets/attic.yaml via sops-nix)
   netrc_opts=(--option netrc-file "$SECRETS/netrc")
-  install -D -m 600 "$SECRETS/netrc" /mnt/etc/nix/netrc
 fi
 nixos-install --flake "/mnt/etc/nixos#$host" --no-root-passwd --no-channel-copy \
   --option build-dir /mnt/var/tmp/nix-build \

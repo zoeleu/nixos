@@ -14,6 +14,12 @@
     # Claude Desktop for Linux (repackaged official build). Not following our
     # nixpkgs on purpose: it pins the Electron version the app was built for.
     claude-desktop.url = "github:patrickjaja/claude-desktop-extra";
+    # Secrets (secrets/*.yaml) decrypted on each machine with its SSH host key.
+    # Pinned to a commit that is at least two weeks old; update deliberately.
+    sops-nix = {
+      url = "github:Mic92/sops-nix/442449fa7b1fe6c692d0103ac9fc8f9e82931cf3";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # Declarative disk partitioning, used by the installer ISO
     disko = {
       url = "github:nix-community/disko";
@@ -40,6 +46,7 @@
           home-manager.nixosModules.home-manager
           ./modules/common.nix
           ./modules/ci.nix
+          ./modules/secrets.nix
           ./hosts/${name}
           { networking.hostName = lib.mkDefault name; }
         ];
