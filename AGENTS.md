@@ -67,9 +67,10 @@ evaluate instead, and leave applying to Zoe.
 - **Never upload anything non-redistributable to Cachix.** The cache
   (`zoeleu.cachix.org`) is public. Keep the filtering in `ci/` and
   `.github/actions/` intact. A path is never pushed if it:
-  - is unfree, or is a Jovian package without `meta.license`
-    (`ci/unfree-names.nix`; only add to its `knownOpenSource` list after
-    checking the upstream repo's license),
+  - is unfree, or is a binary-only Jovian package without `meta.license`
+    (`-bin`, firmware, or binary `sourceProvenance`; see
+    `ci/unfree-names.nix`). Zoe's policy: anything built from public source
+    may be pushed even without a license field,
   - has any of those in its closure (cachix pushes closures), or
   - is a source / fixed-output path (`"ca":"fixed:..."`): sources have no
     license info, e.g. Steam's download archive.
