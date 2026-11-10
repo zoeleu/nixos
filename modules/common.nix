@@ -84,6 +84,13 @@
   };
 
   # --- Programs ---
+  # nano as the default editor everywhere (git, sudoedit, crontab, ...)
+  programs.nano.enable = true;
+  environment.variables = {
+    EDITOR = "nano";
+    VISUAL = "nano";
+  };
+
   programs.firefox.enable = true;
   programs.nix-ld.enable = true; # run downloaded (non-Nix) Linux binaries
 

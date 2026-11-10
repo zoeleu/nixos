@@ -15,6 +15,7 @@ ci/                  # helpers for GitHub Actions
 | Host | Machine |
 |---|---|
 | `deck` | Steam Deck (LCD) with [Jovian NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS) |
+| `desktop` | AMD RX 9060 XT PC, Plasma, Incus for AI-agent VMs (config ready, not installed yet) |
 
 Shared everywhere: fish, pt_BR formats, Tailscale, Bitwarden (also as SSH
 agent and for signing git commits), Home Manager, claude-code.
@@ -43,19 +44,29 @@ socket (`~/.bitwarden-ssh-agent.sock`).
 
 ## Adding a machine
 
-1. Install NixOS on it normally.
-2. Clone this repo to `/etc/nixos` (move the generated files aside first).
-3. Create `hosts/<hostname>/` with the generated `hardware-configuration.nix`
-   and a `default.nix` with the machine's boot loader, desktop, SSH policy,
-   `home-manager.users.zoe.home.stateVersion` and `system.stateVersion`
-   (see `hosts/deck/default.nix`).
-4. `git add` it (flakes only see tracked files), then
-   `sudo nixos-rebuild switch --flake /etc/nixos#<hostname>`.
+A folder in `hosts/` only becomes a machine once it has a
+`hardware-configuration.nix` (generated on the real machine), so a host can
+be prepared before it's installed.
 
-CI picks up new hosts automatically.
-
-Planned `desktop`: fresh install with disk encryption (LUKS), auto-login
-into zoe, key-only SSH.
+1. Install NixOS with the graphical installer: tick "Encrypt system", ext4,
+   user `zoe`, allow unfree software. Desktop choice doesn't matter.
+2. After the first boot (as zoe, online):
+   ```bash
+   sudo mv /etc/nixos /etc/nixos.installer
+   sudo git clone https://github.com/zoeleu/nixos /etc/nixos
+   sudo cp /etc/nixos.installer/hardware-configuration.nix /etc/nixos/hosts/<hostname>/
+   grep -n 'luks' /etc/nixos.installer/configuration.nix
+   ```
+   The installer may put LUKS lines (e.g. for the encrypted swap) in its
+   `configuration.nix` instead of `hardware-configuration.nix`; copy any
+   `boot.initrd.luks.devices...` line it shows into the host's
+   `default.nix` (the deck has its swap line there too).
+3. New host only: create `hosts/<hostname>/default.nix` (boot loader,
+   desktop, SSH policy, `home-manager.users.zoe.home.stateVersion`,
+   `system.stateVersion`; see the existing hosts).
+4. `cd /etc/nixos && sudo git add -A` (flakes only see tracked files), then
+   `sudo nixos-rebuild boot --flake /etc/nixos#<hostname>` and reboot.
+5. Commit and push the hardware config; CI starts building the host.
 
 ## CI / binary cache
 

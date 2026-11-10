@@ -25,8 +25,11 @@ ci/push-built.sh        # pushes packages to Cachix as soon as they're built
 Hosts:
 - `deck`: Steam Deck LCD running Jovian NixOS. Separate auto-login `deck`
   user for Gaming Mode, `zoe` is the admin with an fscrypt-encrypted home.
-- A `desktop` host is planned (fresh install with LUKS, auto-login into zoe,
-  key-only SSH). It doesn't exist yet; don't invent its hardware config.
+- `desktop`: AMD RX 9060 XT PC, Plasma + Plasma Login Manager, LUKS
+  (passphrase at boot) then auto-login into zoe, key-only SSH, Incus for
+  AI-agent VMs (zoe in the restricted `incus` group, never `incus-admin`).
+  Not installed yet: its `hardware-configuration.nix` is missing on purpose,
+  so the flake skips it (see flake.nix). Never write that file by hand.
 
 ## Where things go
 
