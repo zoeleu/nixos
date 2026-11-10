@@ -52,6 +52,7 @@ in
   boot.kernelModules = [ "bfq" ];
   services.udev.extraRules = ''
     ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*|nvme[0-9]*n[0-9]*|mmcblk[0-9]*", ATTR{queue/scheduler}="bfq"
+    SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="pn532", TAG+="uaccess"
   '';
 
   # --- Bluetooth (Plasma's Bluetooth settings; audio goes through PipeWire,
@@ -153,6 +154,17 @@ in
     defaultNetwork.settings.dns_enabled = true; # containers resolve each other by name
   };
 
+  # --- NFC: PN532 reader on a CP2102 USB-serial adapter (libnfc) ---
+  # nfc-list, nfc-poll, nfc-mfclassic... find the reader through
+  # /etc/nfc/libnfc.conf. The udev rule gives the adapter a fixed name
+  # (ttyUSB numbers change) and lets whoever sits at the machine open it,
+  # so no dialout group is needed.
+  environment.etc."nfc/libnfc.conf".text = ''
+    allow_autoscan = false
+    device.name = "PN532 (CP2102)"
+    device.connstring = "pn532_uart:/dev/pn532"
+  '';
+
   # --- Flatpak + Flathub ---
   services.flatpak.enable = true;
   systemd.services.flatpak-flathub = {
@@ -185,6 +197,8 @@ in
     python3
     podman-compose
     mangohud
+    usbutils # lsusb
+    libnfc   # NFC tools; reader set up above
   ];
 
   home-manager.users.zoe = {
