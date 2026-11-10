@@ -116,8 +116,19 @@ jobs:
           ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           push: ${{ github.event_name != 'pull_request' }}
 
+      # ccache counters for this build only (they're kept in the cache folder)
+      - name: Reset ccache statistics
+        run: |
+          echo "CCACHE_BIN=$(nix build --no-link --print-out-paths nixpkgs#ccache.out)/bin/ccache" >> "$GITHUB_ENV"
+          sudo "$(nix build --no-link --print-out-paths nixpkgs#ccache.out)/bin/ccache" --dir /var/cache/ccache --zero-stats
+
       - name: Build ${{ matrix.pkg }}
         run: nix build --option log-lines 200 .#nixosConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
+
+      # hits/misses, and why (only meaningful for packages built through ccache)
+      - name: ccache statistics
+        if: always() && env.CCACHE_BIN != ''
+        run: sudo "$CCACHE_BIN" --dir /var/cache/ccache --show-stats --verbose || true
 
       - uses: ./.github/actions/finish-push
         if: always()
