@@ -26,5 +26,6 @@ pkgs.writeShellApplication {
   ];
   # the repo as of this image build, if GitHub can't be reached
   runtimeEnv.ISO_REPO = "${inputs.self}";
+  runtimeEnv.INSTALLER_VAULT_LIB = "${./vault-session.sh}";
   text = builtins.readFile ./install-nixos.sh;
 }

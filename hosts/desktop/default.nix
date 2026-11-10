@@ -170,7 +170,6 @@ in
   # --- Apps ---
   environment.systemPackages = with pkgs; [
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
-    codex
     google-chrome
     bun
     nodejs_26 # current LTS

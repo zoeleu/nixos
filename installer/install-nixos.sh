@@ -52,13 +52,19 @@ if [ "$resume" = 0 ] && mountpoint -q /mnt; then
   die "/mnt is already mounted; inspect it and use install-nixos --resume <host>"
 fi
 
-# Separate RAM-only credentials from any existing interactive CLI login.
+# Per-attempt secrets are deleted; vault login/session survives failed builds
+# in a separate private /run directory for --resume (never on the target disk).
 umask 077
 SECRETS=$(mktemp -d /run/install-secrets.XXXXXX)
-export BITWARDENCLI_APPDATA_DIR="$SECRETS/bitwarden"
-BW_SESSION=""
+# shellcheck source=/dev/null
+source "${INSTALLER_VAULT_LIB:-$(dirname "${BASH_SOURCE[0]}")/vault-session.sh}"
+BW_SESSION=${BW_SESSION:-}
+# Initialized here, managed by vault-session.sh.
+# shellcheck disable=SC2034
+VAULT_STATE="" vault_owned=0
+installed=0
 cleanup() {
-  if [ -n "$BW_SESSION" ]; then bw logout >/dev/null 2>&1 || true; fi
+  vault_session_finish "$installed"
   rm -rf "$SECRETS"
   unset BW_SESSION BW_CLIENTID BW_CLIENTSECRET
   if [ "$(readlink /tmp/disk.key 2>/dev/null || true)" = "$SECRETS/disk.key" ]; then rm -f /tmp/disk.key; fi
@@ -174,14 +180,25 @@ item_name="nixos: $host"
 user_pw="" disk_pw="" vault_item="" attic_token=""
 echo
 bold "Passwords from Vaultwarden ($VAULT_URL):"
-echo "  1) SSO login in a full-screen browser (then your master password)"
-echo "  2) personal API key (web vault: Account settings > Security > Keys)"
-echo "  3) don't use the vault, type the passwords"
-read -rp "Choice? [1] " login_method
-login_method=${login_method:-1}
+vault_session_init "/run/nixos-install-vault/$host"
+vault_status=$(vault_session_status)
+logged_in=0
+login_method=3
+if [ "$vault_status" = unlocked ] || [ "$vault_status" = locked ]; then
+  vault_server=$(bw status | jq -r '.serverUrl // empty')
+  [ "$vault_server" = "$VAULT_URL" ] || die "existing vault session belongs to a different server"
+  logged_in=1
+  login_method=reuse
+  echo "Reusing the existing Bitwarden login ($vault_status)."
+else
+  echo "  1) SSO login in a full-screen browser (then your master password)"
+  echo "  2) personal API key (web vault: Account settings > Security > Keys)"
+  echo "  3) don't use the vault, type the passwords"
+  read -rp "Choice? [1] " login_method
+  login_method=${login_method:-1}
+fi
 if [ "$login_method" = 1 ] || [ "$login_method" = 2 ]; then
   bw config server "$VAULT_URL" >/dev/null
-  logged_in=0
   if [ "$login_method" = 1 ]; then
     # `bw login --sso` runs `xdg-open <url>` and waits for the browser to
     # come back to http://localhost:8065. Our xdg-open opens Firefox in a
@@ -210,8 +227,9 @@ EOF
     export BW_CLIENTID BW_CLIENTSECRET
     if bw login --apikey >/dev/null; then logged_in=1; fi
   fi
-  if [ "$logged_in" = 1 ]; then bold "Unlock the vault:"; fi
-  if [ "$logged_in" = 1 ] && BW_SESSION=$(bw unlock --raw) && [ -n "$BW_SESSION" ]; then
+fi
+if [ "$logged_in" = 1 ] && [ "$vault_status" != unlocked ]; then bold "Unlock the vault:"; fi
+if [ "$logged_in" = 1 ] && vault_session_unlock; then
     export BW_SESSION
     bw sync >/dev/null || die "vault sync failed; refusing to use stale credentials"
     vault_item=$(bw list items --search "$item_name" | jq -c --arg n "$item_name" '[.[] | select(.name == $n)][0] // empty')
@@ -241,8 +259,7 @@ EOF
     fi
   else
     BW_SESSION=""
-    red "Vaultwarden login failed; asking for the passwords instead."
-  fi
+    red "Vault unavailable or skipped; asking for missing credentials instead."
 fi
 # SOPS is required by the installed system. Check it before any disk writes,
 # and recover cache authentication from the encrypted source of truth.
@@ -380,6 +397,7 @@ echo "Set zoe's password."
 # modules/common.nix) for nixos-rebuild.
 git -C /mnt/etc/nixos remote set-url origin git@github.com:zoeleu/nixos.git 2>/dev/null || true
 nixos-enter --root /mnt -c 'chown -R zoe:users /etc/nixos'
+installed=1
 
 echo
 bold "Done. Remove the USB stick and reboot."

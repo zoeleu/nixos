@@ -112,8 +112,11 @@ private cache **before partitioning**. The SOPS age key comes from the vault
 or a hidden local prompt; on resume an already enrolled host key can also
 work. The cache netrc comes from `secrets/attic.yaml` and stays in `/run`
 until cleanup. A missing/invalid key or token stops the install instead of
-silently attempting a large unauthenticated build. Vault login is isolated
-from any existing CLI session.
+silently attempting a large unauthenticated build. Vault login/session stays in a private directory under `/run` after a failed
+build. `--resume` reuses it: an unlocked vault needs no prompt, and a locked
+login needs only the master password. Success clears the installer-managed
+session; reboot clears `/run`. A supplied `BW_SESSION` and CLI appdata path
+are also reused, without logging out a borrowed login.
 
 On an older ISO, apply the repair to the existing checkout first, then run
 the repaired command with its declared tools (do not run the ISO's old
@@ -123,7 +126,7 @@ the repaired command with its declared tools (do not run the ISO's old
 sudo nix run /mnt/etc/nixos#install-nixos -- --resume desktop
 ```
 
-ChatGPT is temporarily omitted from the desktop to unblock installation.
+ChatGPT and Codex are temporarily omitted from the desktop to unblock installation.
 `overlays/tectonic.nix` still adds the system AWS-LC
 library required by the pinned Rust Cargo hook; OpenSSL alone cannot
 satisfy it. `nix build .#tectonic .#chatgpt` tests these packages even before
