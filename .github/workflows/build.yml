@@ -68,8 +68,8 @@ jobs:
       - name: List hosts and slow packages
         id: list
         run: |
-          echo "hosts=$(nix eval --json .#nixosConfigurations --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
-          heavy=$(nix eval --json .#nixosConfigurations --apply '
+          echo "hosts=$(nix eval --json .#ciConfigurations --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+          heavy=$(nix eval --json .#ciConfigurations --apply '
             cs: builtins.concatLists (map (host:
               map (pkg: { inherit host pkg; })
                 (builtins.attrNames cs.${host}.config.ci.heavyPackages))
@@ -123,7 +123,7 @@ jobs:
           sudo "$(nix build --no-link --print-out-paths nixpkgs#ccache.out)/bin/ccache" --dir /var/cache/ccache --zero-stats
 
       - name: Build ${{ matrix.pkg }}
-        run: nix build --option log-lines 200 .#nixosConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
+        run: nix build --option log-lines 200 .#ciConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
 
       # hits/misses, and why (only meaningful for packages built through ccache)
       - name: ccache statistics
@@ -193,37 +193,13 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build ${{ matrix.host }}
-        run: nix build --option log-lines 200 .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
+        run: nix build --option log-lines 200 .#ciConfigurations.${{ matrix.host }}.config.system.build.toplevel
 
-      - uses: ./.github/actions/finish-push
-        if: always()
-
-  # Desktop hardware is generated only at installation, so it is absent from
-  # nixosConfigurations until then. Cache/test its app and TeX engine anyway.
-  desktop-apps:
-    needs: prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: flake-lock
-      - uses: ./.github/actions/setup
-        with:
-          # Shared cache settings; no machine is activated by this action.
-          host: deck
-          attic-token: ${{ secrets.ATTIC_TOKEN }}
-          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          push: ${{ github.event_name != 'pull_request' }}
-      - name: Build ChatGPT and its TeX engine
-        run: nix build --option log-lines 200 .#tectonic .#chatgpt
       - uses: ./.github/actions/finish-push
         if: always()
 
   commit:
-    needs: [prepare, build, desktop-apps]
+    needs: [prepare, heavy, build]
     if: needs.prepare.outputs.updated == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -247,10 +223,11 @@ jobs:
   # Machines auto-update from the `built` branch (modules/auto-upgrade.nix).
   # Move it only once every host built, i.e. its packages are in the cache.
   publish:
-    needs: [build, desktop-apps, commit]
+    needs: [heavy, build, commit]
     if: >-
       always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-      && needs.build.result == 'success' && needs.desktop-apps.result == 'success'
+      && (needs.heavy.result == 'success' || needs.heavy.result == 'skipped')
+      && needs.build.result == 'success'
       && (needs.commit.result == 'success' || needs.commit.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:

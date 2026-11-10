@@ -36,7 +36,10 @@ Hosts:
   AI-agent VMs (zoe in the restricted `incus` group, never `incus-admin`).
   Not installed yet: its `hardware-configuration.nix` and `disk.nix` are
   missing on purpose (the installer ISO writes them),
-  so the flake skips it (see flake.nix). Never write that file by hand.
+  so nixosConfigurations skips it (see flake.nix). ciConfigurations builds
+  it with the explicit build-only hosts/desktop/ci.nix profile (tmpfs root,
+  no bootloader). CI uses the real configuration once the generated files
+  exist. Never write those generated files by hand.
 
 ## Where things go
 
@@ -67,6 +70,8 @@ export NIX_CONFIG="experimental-features = nix-command flakes"
 nix eval --json .#nixosConfigurations --apply builtins.attrNames          # hosts
 nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath   # must succeed for every host
 nix build --dry-run .#nixosConfigurations.<host>.config.system.build.toplevel      # what would compile
+# Also evaluate/dry-run every ciConfigurations host (includes pre-install desktop):
+nix eval --raw .#ciConfigurations.<host>.config.system.build.toplevel.drvPath
 nix run nixpkgs#actionlint -- -ignore SC2016 .github/workflows/build.yml  # after editing CI
 ```
 

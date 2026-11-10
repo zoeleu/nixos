@@ -6,7 +6,7 @@ description: >
 
 inputs:
   host:
-    description: Name of the host in nixosConfigurations
+    description: Name of the host in ciConfigurations
     required: true
   attic-token:
     description: Attic token (push+pull on cache "nixos"); empty = no Attic
@@ -38,7 +38,7 @@ runs:
         HOST: ${{ inputs.host }}
         ATTIC_TOKEN: ${{ inputs.attic-token }}
       run: |
-        cfg=".#nixosConfigurations.$HOST.config.nix.settings"
+        cfg=".#ciConfigurations.$HOST.config.nix.settings"
         subs=$(nix eval --raw "$cfg.substituters" --apply 'builtins.concatStringsSep " "')
         keys=$(nix eval --raw "$cfg.trusted-public-keys" --apply 'builtins.concatStringsSep " "')
         # Attic is private: downloads from cache.zoe.dev.br need the token

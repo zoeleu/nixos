@@ -44,8 +44,15 @@
       hosts = lib.attrNames (lib.filterAttrs
         (name: type: type == "directory" && builtins.pathExists ./hosts/${name}/hardware-configuration.nix)
         (builtins.readDir ./hosts));
-      mkHost = name: lib.nixosSystem {
-        specialArgs = { inherit inputs; };
+      # Hosts awaiting installation can opt into CI with an explicit build-only
+      # profile. Real generated hardware is still required for deployment.
+      ciHosts = lib.attrNames (lib.filterAttrs
+        (name: type: type == "directory" && (
+          builtins.elem name hosts || builtins.pathExists ./hosts/${name}/ci.nix
+        ))
+        (builtins.readDir ./hosts));
+      mkHost = name: ciBuild: lib.nixosSystem {
+        specialArgs = { inherit inputs ciBuild; };
         modules = [
           home-manager.nixosModules.home-manager
           ./modules/common.nix
@@ -55,11 +62,13 @@
           ./modules/avatar.nix
           ./hosts/${name}
           { networking.hostName = lib.mkDefault name; }
-        ];
+        ] ++ lib.optional ciBuild ./hosts/${name}/ci.nix;
       };
     in
     {
-      nixosConfigurations = lib.genAttrs hosts mkHost;
+      nixosConfigurations = lib.genAttrs hosts (name: mkHost name false);
+      ciConfigurations = lib.genAttrs ciHosts (name:
+        mkHost name (!(builtins.elem name hosts)));
 
       # Installer images (installer/), the same installer two ways:
       #   nix build .#installer-iso       USB stick / Ventoy

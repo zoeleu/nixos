@@ -177,10 +177,23 @@ be prepared before it's installed.
 `.github/workflows/build.yml` builds every host on each push and weekly
 (with `nix flake update`):
 
+The matrix uses `ciConfigurations`: installed hosts use their exact real
+configuration. Before the desktop's generated hardware files are committed,
+`hosts/desktop/ci.nix` supplies an explicit build-only profile with a
+disposable tmpfs root and no bootloader. This profile is never exported in
+`nixosConfigurations`, so the installer and auto-upgrade keep using real
+hardware/disk files. Once those files are committed, CI automatically builds
+the real desktop configuration instead.
+
 1. Each slow package (`ci.heavyPackages`: kernel, Mesa, PipeWire from
    `modules/ci.nix`, plus per-host extras) builds in its own job, all on
    separate runners at the same time.
 2. Then each host's full system builds, downloading those from the cache.
+   Desktop also splits its CachyOS kernel, ChatGPT, tectonic and Claude
+   Desktop into heavy jobs. It uses the same cache upload, ccache workflow
+   and failure handling as the Deck; no separate desktop-only app job.
+3. `built` advances only after the complete Deck and desktop matrix succeeds.
+   The weekly lock-file commit also waits for both hosts.
 
 Every job joins the tailnet and pushes each new package to the private
 Attic cache as soon as it appears (`attic watch-store`), including when the

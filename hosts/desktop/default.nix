@@ -4,8 +4,9 @@
 #
 # Installed with the installer ISO (`install-nixos`, see installer/), which
 # partitions the disk per ./disko.nix and writes ./hardware-configuration.nix
-# and ./disk.nix. Until those exist the flake skips this host.
-{ config, lib, pkgs, inputs, ... }:
+# and ./disk.nix. Until those exist it is available only in ciConfigurations,
+# using ci.nix; nixosConfigurations still requires the real generated files.
+{ config, lib, pkgs, inputs, ciBuild ? false, ... }:
 
 let
   # CachyOS kernel (Chaotic-Nyx): BORE scheduler + Clang ThinLTO, built for
@@ -24,15 +25,21 @@ in
 {
   # Not booted yet: CI builds it first (it's not in any binary cache), then
   # switch with: boot.kernelPackages = cachyos;  (replacing linuxPackages_latest)
-  ci.heavyPackages.cachyos-kernel = cachyos.kernel;
+  ci.heavyPackages = {
+    cachyos-kernel = cachyos.kernel;
+    chatgpt = pkgs.chatgpt;
+    tectonic = pkgs.tectonic-unwrapped;
+    claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  };
 
   imports = [
+    ./kde-apps.nix
+    inputs.claude-desktop.nixosModules.default
+  ] ++ lib.optionals (!ciBuild) [
     ./hardware-configuration.nix # generated with --no-filesystems: disko owns the disks
     ./disko.nix
     ./disk.nix                   # which disk; written by the installer
-    ./kde-apps.nix
     inputs.disko.nixosModules.disko
-    inputs.claude-desktop.nixosModules.default
   ];
 
   # Compressed swap in RAM, used before the 32 GB swap partition
