@@ -1,5 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # Installs one of the machines in https://github.com/zoeleu/nixos onto a disk.
 # Run on the installer ISO as root: install-nixos
+# Resume a mounted installation without formatting: install-nixos --resume <host>
 #
 #  1. clone the repo (latest main; falls back to the copy on the ISO)
 #  2. pick a host (one with hosts/<host>/disko.nix) and a disk
@@ -25,22 +29,43 @@ VAULT_URL="https://vw.zoe.dev.br"
 # for zoe@zoe.dev.br); passing it skips the "SSO identifier" page
 SSO_IDENTIFIER="00000000-01DC-01DC-01DC-000000000000"
 WORK=/tmp/nixos-config
-SECRETS=/run/install-secrets # tmpfs (RAM), removed at exit
+resume=0
+host=""
+if [ "${1:-}" = --resume ]; then
+  resume=1
+  host=${2:-}
+  [ "$#" -eq 2 ] && [[ "$host" =~ ^[a-zA-Z0-9_-]+$ ]] || {
+    echo "Usage: install-nixos --resume <host>" >&2; exit 2;
+  }
+elif [ "$#" -ne 0 ]; then
+  echo "Usage: install-nixos [--resume <host>]" >&2; exit 2
+fi
 
 red() { printf '\033[1;31m%s\033[0m\n' "$*"; }
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 die() { red "Error: $*"; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+exec 9>/run/install-nixos.lock
+flock -n 9 || die "another installer is running"
+if [ "$resume" = 0 ] && mountpoint -q /mnt; then
+  die "/mnt is already mounted; inspect it and use install-nixos --resume <host>"
+fi
 
-mkdir -p "$SECRETS" && chmod 700 "$SECRETS"
+# Separate RAM-only credentials from any existing interactive CLI login.
+umask 077
+SECRETS=$(mktemp -d /run/install-secrets.XXXXXX)
+export BITWARDENCLI_APPDATA_DIR="$SECRETS/bitwarden"
 BW_SESSION=""
 cleanup() {
-  rm -rf "$SECRETS"
   if [ -n "$BW_SESSION" ]; then bw logout >/dev/null 2>&1 || true; fi
-  unset BW_CLIENTID BW_CLIENTSECRET
+  rm -rf "$SECRETS"
+  unset BW_SESSION BW_CLIENTID BW_CLIENTSECRET
+  if [ "$(readlink /tmp/disk.key 2>/dev/null || true)" = "$SECRETS/disk.key" ]; then rm -f /tmp/disk.key; fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Ask for a secret twice (hidden); prints it
 ask_secret() {
@@ -60,6 +85,23 @@ if ! curl -fsS --max-time 10 -o /dev/null https://cache.nixos.org/nix-cache-info
   red "No internet connection. Plug in Ethernet (or run 'nmtui'), then run install-nixos again."
   exit 1
 fi
+if [ "$resume" = 1 ]; then
+  # Never infer that /mnt is still mounted from a previous attempt.
+  mountpoint -q /mnt || die "/mnt is not a mountpoint; mount the existing root filesystem first"
+  mountpoint -q /mnt/boot || die "/mnt/boot is not mounted; mount the existing EFI partition first"
+  root_type=$(findmnt -n -o FSTYPE --mountpoint /mnt)
+  case "$root_type" in tmpfs|overlay|squashfs|iso9660) die "/mnt is not the installed root filesystem" ;; esac
+  [ "$(findmnt -n -o FSTYPE --mountpoint /mnt/boot)" = vfat ] || die "/mnt/boot must be the existing FAT EFI filesystem"
+  findmnt -R /mnt
+  WORK=/mnt/etc/nixos
+  [ -d "$WORK/.git" ] || die "existing /mnt/etc/nixos git checkout is missing"
+  for f in hardware-configuration.nix disk.nix disko.nix; do
+    [ -s "$WORK/hosts/$host/$f" ] || die "missing existing hosts/$host/$f; refusing to regenerate hardware or disk configuration"
+  done
+  [ -s /mnt/etc/ssh/ssh_host_ed25519_key ] || die "existing SSH host key is missing; refusing to replace it"
+  [ -s /mnt/etc/ssh/ssh_host_ed25519_key.pub ] || die "existing SSH host public key is missing"
+  bold "Resuming '$host' using the existing filesystems and generated configuration."
+else
 rm -rf "$WORK"
 if git clone --quiet "$REPO_URL" "$WORK"; then
   echo "Using latest $REPO_URL ($(git -C "$WORK" log -1 --format='%h %s'))"
@@ -68,8 +110,26 @@ else
   cp -r "$ISO_REPO" "$WORK" && chmod -R u+w "$WORK"
   git -C "$WORK" init --quiet && git -C "$WORK" add -A
 fi
+fi
 cd "$WORK"
+if [ "$resume" = 1 ]; then
+  # Snapshot the existing checkout (including local/staged changes) before SOPS edits.
+  snapshot="/mnt/var/lib/nixos-install/resume-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+  mkdir -p "$(dirname "$snapshot")"
+  tar -czf "$snapshot" -C /mnt/etc nixos
+  echo "Preserved the existing checkout at $snapshot"
+  git add -- "hosts/$host/hardware-configuration.nix" "hosts/$host/disk.nix"
+  configured_disk=$(nix eval --raw ".#nixosConfigurations.$host.config.disko.devices.disk.main.device")
+  configured_disk=$(readlink -f "$configured_disk")
+  for target in /mnt /mnt/boot; do
+    source=$(findmnt -n -o SOURCE --mountpoint "$target")
+    lsblk -s -nr -o PATH "$source" | grep -Fxq "$configured_disk" \
+      || die "$target does not belong to the disk in hosts/$host/disk.nix"
+  done
 
+fi
+
+if [ "$resume" = 0 ]; then
 # --- 2a. host ---
 mapfile -t hosts < <(for d in hosts/*/; do [ -f "$d/disko.nix" ] && basename "$d"; done)
 [ "${#hosts[@]}" -gt 0 ] || die "no host in the repo has a disko.nix"
@@ -107,6 +167,7 @@ echo "  $(lsblk -dno SIZE,MODEL "/dev/$disk")"
 lsblk -no NAME,SIZE,FSTYPE,LABEL "/dev/$disk" | tail -n +2 | sed 's/^/    /'
 read -rp "Type the disk name ($disk) to erase it and install '$host': " confirm
 [ "$confirm" = "$disk" ] || die "not confirmed, nothing was changed"
+fi
 
 # --- 3. passwords: Vaultwarden, or ask ---
 item_name="nixos: $host"
@@ -152,7 +213,7 @@ EOF
   if [ "$logged_in" = 1 ]; then bold "Unlock the vault:"; fi
   if [ "$logged_in" = 1 ] && BW_SESSION=$(bw unlock --raw) && [ -n "$BW_SESSION" ]; then
     export BW_SESSION
-    bw sync >/dev/null || true
+    bw sync >/dev/null || die "vault sync failed; refusing to use stale credentials"
     vault_item=$(bw list items --search "$item_name" | jq -c --arg n "$item_name" '[.[] | select(.name == $n)][0] // empty')
     if [ -n "$vault_item" ]; then
       user_pw=$(jq -r '.login.password // empty' <<<"$vault_item")
@@ -171,22 +232,48 @@ EOF
     # Pull token for the private Attic cache (cache.zoe.dev.br)
     attic_token=$(bw list items --search "nixos: attic" | jq -r '[.[] | select(.name == "nixos: attic")][0].login.password // empty')
     if [ -n "$attic_token" ]; then
-      printf 'machine cache.zoe.dev.br\npassword %s\n' "$attic_token" > "$SECRETS/netrc"
+      printf 'machine cache.zoe.dev.br\nlogin attic\npassword %s\n' "$attic_token" > "$SECRETS/netrc"
       chmod 600 "$SECRETS/netrc"
       attic_token=""
       echo "Found the Attic cache token."
     else
-      red "No 'nixos: attic' item in the vault: packages from cache.zoe.dev.br can't be downloaded and will be built locally."
+      echo "No vault cache token; will use the authenticated netrc from SOPS."
     fi
   else
     BW_SESSION=""
     red "Vaultwarden login failed; asking for the passwords instead."
   fi
 fi
+# SOPS is required by the installed system. Check it before any disk writes,
+# and recover cache authentication from the encrypted source of truth.
+if [ ! -s "$SECRETS/age.key" ] && [ "$resume" = 1 ]; then
+  ssh-to-age -private-key -i /mnt/etc/ssh/ssh_host_ed25519_key > "$SECRETS/age.key"
+fi
+if [ ! -s "$SECRETS/age.key" ] || ! SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt --output-type json secrets/attic.yaml > "$SECRETS/attic.json" 2>/dev/null; then
+  read -rsp "SOPS admin age secret key (Bitwarden 'sops: age key'): " age_key; echo
+  [ -n "$age_key" ] || die "SOPS access is required; no disk was formatted"
+  printf '%s\n' "$age_key" > "$SECRETS/age.key"
+  age_key=""
+  SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt --output-type json secrets/attic.yaml > "$SECRETS/attic.json" \
+    || die "SOPS decryption failed; fix the age key before continuing"
+fi
+jq -er '.netrc | select(type == "string" and length > 0)' "$SECRETS/attic.json" > "$SECRETS/netrc" \
+  || die "secrets/attic.yaml has no netrc"
+rm -f "$SECRETS/attic.json"
+# Reject an expired/missing token now, rather than doing a multi-GB build
+# against a private cache anonymously. Do not print the netrc or the response.
+curl --fail --silent --show-error --max-time 30 --netrc-file "$SECRETS/netrc" \
+  -o /dev/null https://cache.zoe.dev.br/nixos/nix-cache-info \
+  || die "private cache authentication failed; renew secrets/attic.yaml before continuing"
+for f in secrets/*.yaml; do
+  SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt "$f" >/dev/null \
+    || die "SOPS decryption failed for $f; no disk was formatted"
+done
+echo "SOPS decryption and private cache authentication verified."
 asked=0
-if [ -z "$disk_pw" ]; then disk_pw=$(ask_secret "Disk encryption passphrase (typed at every boot)"); asked=1; fi
+if [ "$resume" = 0 ] && [ -z "$disk_pw" ]; then disk_pw=$(ask_secret "Disk encryption passphrase (typed at every boot)"); asked=1; fi
 if [ -z "$user_pw" ]; then user_pw=$(ask_secret "Password for zoe"); asked=1; fi
-if [ -n "$BW_SESSION" ] && [ "$asked" = 1 ]; then
+if [ "$resume" = 0 ] && [ -n "$BW_SESSION" ] && [ "$asked" = 1 ]; then
   read -rp "Save these to the vault as '$item_name'? [Y/n] " save
   if [ "${save,,}" != "n" ]; then
     if [ -n "$vault_item" ]; then
@@ -203,6 +290,7 @@ if [ -n "$BW_SESSION" ] && [ "$asked" = 1 ]; then
     fi
   fi
 fi
+if [ "$resume" = 0 ]; then
 printf '%s' "$disk_pw" > "$SECRETS/disk.key"
 
 # --- 4. host files ---
@@ -223,6 +311,7 @@ ln -sf "$SECRETS/disk.key" /tmp/disk.key
 disko --mode destroy,format,mount --yes-wipe-all-disks --flake ".#$host" \
   || die "partitioning failed"
 rm -f /tmp/disk.key "$SECRETS/disk.key"
+fi
 
 # --- 5b. secrets: this machine's SSH host key decrypts secrets/*.yaml ---
 # Create the host key now (instead of on first boot) so its age key can be
@@ -231,7 +320,7 @@ mkdir -p /mnt/etc/ssh
 if [ ! -f /mnt/etc/ssh/ssh_host_ed25519_key ]; then
   ssh-keygen -q -t ed25519 -N "" -C "root@$host" -f /mnt/etc/ssh/ssh_host_ed25519_key
 fi
-host_age=$(ssh-to-age < /mnt/etc/ssh/ssh_host_ed25519_key.pub)
+host_age=$(ssh-keygen -y -f /mnt/etc/ssh/ssh_host_ed25519_key | ssh-to-age)
 if grep -q "$host_age" .sops.yaml; then
   echo "This machine can already decrypt the secrets."
 elif [ -f "$SECRETS/age.key" ]; then
@@ -242,16 +331,22 @@ elif [ -f "$SECRETS/age.key" ]; then
   git add .sops.yaml secrets
   echo "Added '$host' to .sops.yaml and re-encrypted the secrets."
 else
-  red "Couldn't add '$host' to the secrets (no 'sops: age key' from the vault)."
-  red "Its secrets (e.g. the Attic cache token) won't decrypt until you add"
-  red "  $host_age"
-  red "to .sops.yaml and run 'sops updatekeys' on secrets/*.yaml."
+  die "cannot enroll '$host' in SOPS; an admin age key is required"
 fi
-rm -f "$SECRETS/age.key"
+# Verify every encrypted file with the target host key, not just the admin key.
+ssh-to-age -private-key -i /mnt/etc/ssh/ssh_host_ed25519_key > "$SECRETS/host-age.key"
+for f in secrets/*.yaml; do
+  SOPS_AGE_KEY_FILE="$SECRETS/host-age.key" sops --decrypt "$f" >/dev/null \
+    || die "target host cannot decrypt $f; fix SOPS recipients before installation"
+done
+rm -f "$SECRETS/age.key" "$SECRETS/host-age.key"
 
 # --- 6. install ---
 mkdir -p /mnt/etc
-cp -a "$WORK" /mnt/etc/nixos
+if [ "$resume" = 0 ]; then
+  [ ! -e /mnt/etc/nixos ] || die "/mnt/etc/nixos already exists; preserve it and use --resume"
+  cp -a "$WORK" /mnt/etc/nixos
+fi
 cd /mnt/etc/nixos
 subs=$(nix eval --raw ".#nixosConfigurations.$host.config.nix.settings.substituters" --apply 'builtins.concatStringsSep " "')
 keys=$(nix eval --raw ".#nixosConfigurations.$host.config.nix.settings.trusted-public-keys" --apply 'builtins.concatStringsSep " "')
@@ -270,7 +365,7 @@ nixos-install --flake "/mnt/etc/nixos#$host" --no-root-passwd --no-channel-copy 
   --option extra-substituters "$subs" \
   --option extra-trusted-public-keys "$keys" \
   "${netrc_opts[@]}" \
-  || die "nixos-install failed (fix and re-run: the disk is still mounted at /mnt)"
+  || die "nixos-install failed; preserve /mnt and run: install-nixos --resume $host"
 rm -rf /mnt/var/tmp/nix-build
 
 # --- 7a. zoe's password (stored hashed in /etc/shadow) ---

@@ -5,6 +5,7 @@
   # --- Nix ---
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = true;
+  nixpkgs.overlays = [ (import ../overlays/tectonic.nix) ];
 
   # Our private Attic cache on vps-main, filled by GitHub Actions
   # (.github/workflows/build.yml). Downloads need the pull token, which

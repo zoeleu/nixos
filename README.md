@@ -85,6 +85,50 @@ https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
    `hardware-configuration.nix` and `disk.nix` for the host, and made
    `/etc/nixos` zoe's, pushing over SSH).
 
+### Resuming an interrupted installation (never rerun the erase flow)
+
+Keep the existing LUKS root and EFI filesystems mounted at `/mnt` and
+`/mnt/boot`. If the machine rebooted, inspect `lsblk -f` and open/mount the
+**existing** filesystems; do not format them or run disko's destroy mode.
+
+From the repaired installer, run:
+
+```bash
+sudo findmnt -R /mnt
+sudo install-nixos --resume desktop   # or: sudo resume-nixos desktop
+```
+
+Resume requires the existing `/mnt/etc/nixos` checkout, generated
+`hosts/desktop/hardware-configuration.nix` and `disk.nix`, and target SSH host
+key. It verifies that both mounts belong to the configured disk and saves
+the checkout under `/mnt/var/lib/nixos-install/` before SOPS changes. It
+skips disk selection, disko, hardware generation and copying the checkout.
+It reruns `nixos-install`, sets zoe's login password, fixes ownership and the
+Git remote, and leaves rebooting to you. It never changes the existing LUKS
+passphrase. Local hardware files and other local edits stay in place.
+
+The installer now validates SOPS decryption and authenticated access to the
+private cache **before partitioning**. The SOPS age key comes from the vault
+or a hidden local prompt; on resume an already enrolled host key can also
+work. The cache netrc comes from `secrets/attic.yaml` and stays in `/run`
+until cleanup. A missing/invalid key or token stops the install instead of
+silently attempting a large unauthenticated build. Vault login is isolated
+from any existing CLI session.
+
+On an older ISO, apply the repair to the existing checkout first, then run
+the repaired command with its declared tools (do not run the ISO's old
+`install-nixos`):
+
+```bash
+sudo nix run /mnt/etc/nixos#install-nixos -- --resume desktop
+```
+
+ChatGPT stays installed. `overlays/tectonic.nix` adds the system AWS-LC
+library required by the pinned Rust Cargo hook; OpenSSL alone cannot
+satisfy it. `nix build .#tectonic .#chatgpt` tests these packages even before
+the desktop's generated hardware files are available. The lock file is
+unchanged.
+
 ### Network boot (PXE) instead of a USB stick
 
 The same installer is published at https://nix.zoe.dev.br/netboot/ (kernel +

@@ -65,12 +65,24 @@
       #   nix build .#installer-iso       USB stick / Ventoy
       #   nix build .#installer-netboot   network boot: bzImage, initrd, netboot.ipxe
       packages.x86_64-linux = let
+        desktopPkgs = import nixpkgs {
+          system = "x86_64-linux";
+          config.allowUnfree = true;
+          overlays = [ (import ./overlays/tectonic.nix) ];
+        };
         installer = module: lib.nixosSystem {
           specialArgs = { inherit inputs; };
           modules = [ module { nixpkgs.hostPlatform = "x86_64-linux"; } ];
         };
         netboot = (installer ./installer/netboot.nix).config.system.build;
       in {
+        # Build these before the desktop's generated hardware files exist.
+        inherit (desktopPkgs) chatgpt;
+        tectonic = desktopPkgs.tectonic-unwrapped;
+        install-nixos = import ./installer/package.nix {
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          inherit inputs;
+        };
         installer-iso = (installer ./installer/iso.nix).config.system.build.isoImage;
         installer-netboot = nixpkgs.legacyPackages.x86_64-linux.symlinkJoin {
           name = "nixos-zoe-installer-netboot";

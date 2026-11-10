@@ -14,6 +14,10 @@ name: Installer ISO
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "installer/**"
+      - ".github/workflows/iso.yml"
   push:
     branches: [main]
     paths:
@@ -24,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: iso
+  group: iso-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -58,12 +62,14 @@ jobs:
           ls -lh upload/netboot/
 
       - uses: tailscale/github-action@v4
+        if: github.event_name != 'pull_request'
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
       - name: Upload to vps-main
+        if: github.event_name != 'pull_request'
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
@@ -81,6 +87,7 @@ jobs:
           rm -f ~/.ssh/deploy
 
       - name: Check the download
+        if: github.event_name != 'pull_request'
         run: |
           want=$(cut -d' ' -f1 upload/nixos-zoe-installer.iso.sha256)
           got=$(curl -fsSL https://nix.zoe.dev.br/nixos-zoe-installer.iso.sha256 | cut -d' ' -f1)

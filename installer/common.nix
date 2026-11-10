@@ -4,32 +4,7 @@
 { config, lib, pkgs, modulesPath, inputs, ... }:
 
 let
-  install-nixos = pkgs.writeShellApplication {
-    name = "install-nixos";
-    runtimeInputs = with pkgs; [
-      inputs.disko.packages.${pkgs.stdenv.hostPlatform.system}.disko
-      nixos-install-tools
-      git
-      curl
-      util-linux
-      coreutils
-      findutils
-      gnugrep
-      gawk
-      gnused
-      bitwarden-cli # Vaultwarden passwords
-      procps        # pkill (closing the SSO kiosk)
-      ncurses       # clear
-      sops          # re-encrypt secrets for the new machine
-      ssh-to-age
-      yq-go
-      openssh       # ssh-keygen (host key)
-      jq
-    ];
-    # the repo as of this image build, if GitHub can't be reached
-    runtimeEnv.ISO_REPO = "${inputs.self}";
-    text = builtins.readFile ./install-nixos.sh;
-  };
+  install-nixos = import ./package.nix { inherit pkgs inputs; };
 in
 {
 
@@ -39,6 +14,11 @@ in
 
   environment.systemPackages = [
     install-nixos
+    (pkgs.writeShellApplication {
+      name = "resume-nixos";
+      runtimeInputs = [ install-nixos ];
+      text = ''exec install-nixos --resume "$@"'';
+    })
     pkgs.git
     # SSO login to Vaultwarden: install-nixos shows Firefox full-screen in cage
     pkgs.cage
