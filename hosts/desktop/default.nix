@@ -7,7 +7,25 @@
 # and ./disk.nix. Until those exist the flake skips this host.
 { config, lib, pkgs, inputs, ... }:
 
+let
+  # CachyOS kernel (Chaotic-Nyx): BORE scheduler + Clang ThinLTO, built for
+  # x86-64-v3, the highest level the i7-8086K (Coffee Lake: AVX2, no
+  # AVX-512) supports. This kernel has no CPU-specific -march options, and
+  # NATIVE would target the CI runner's CPU, not this one.
+  cachyos = let
+    lto = inputs.chaotic.legacyPackages.x86_64-linux.linuxPackages_cachyos-lto;
+  in lto.cachyOverride {
+    cachyVars = lto.kernel.cachyConfig.cachyVars // {
+      _cpusched = "bore";
+      _processor_opt = "GENERIC_V3";
+    };
+  };
+in
 {
+  # Not booted yet: CI builds it first (it's not in any binary cache), then
+  # switch with: boot.kernelPackages = cachyos;  (replacing linuxPackages_latest)
+  ci.heavyPackages.cachyos-kernel = cachyos.kernel;
+
   imports = [
     ./hardware-configuration.nix # generated with --no-filesystems: disko owns the disks
     ./disko.nix
