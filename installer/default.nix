@@ -18,6 +18,8 @@ let
       gawk
       gnused
       bitwarden-cli # Vaultwarden passwords
+      procps        # pkill (closing the SSO kiosk)
+      ncurses       # clear
       jq
     ];
     # the repo as of this ISO build, if GitHub can't be reached
@@ -32,7 +34,17 @@ in
   nixpkgs.config.allowUnfree = false; # public download: free software only
   networking.networkmanager.enable = true; # `nmtui` for wifi
 
-  environment.systemPackages = [ install-nixos pkgs.git ];
+  environment.systemPackages = [
+    install-nixos
+    pkgs.git
+    # SSO login to Vaultwarden: install-nixos shows Firefox full-screen in cage
+    pkgs.cage
+    pkgs.firefox
+  ];
+  # the minimal ISO turns these off; Firefox needs them
+  hardware.graphics.enable = true;
+  fonts.fontconfig.enable = lib.mkForce true;
+  fonts.enableDefaultPackages = true;
 
   # Shown on the console after boot
   services.getty.helpLine = lib.mkAfter ''

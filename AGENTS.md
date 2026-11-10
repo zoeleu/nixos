@@ -116,9 +116,9 @@ evaluate instead, and leave applying to Zoe.
 
 ## Installer ISO
 
-- `installer/` builds a public download (GitHub release `installer`):
-  keep it free software only (`nixpkgs.config.allowUnfree = false`), and
-  under 2 GiB (release file limit), so it's based on the minimal ISO.
+- `installer/` builds a public download (https://nix.zoe.dev.br, uploaded by
+  iso.yml over Tailscale to deploy@vps-main, which can only rsync into /srv/nix):
+  keep it free software only (`nixpkgs.config.allowUnfree = false`).
 - Hosts with `disko.nix` get their filesystems, LUKS and swap from disko.
   Their `hardware-configuration.nix` is generated with `--no-filesystems`;
   never add `fileSystems`/`swapDevices`/LUKS devices to it or to the host,

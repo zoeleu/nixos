@@ -9,8 +9,9 @@
 #  6. nixos-install from the flake, using the host's binary caches
 #  7. set zoe's password, hand /etc/nixos to zoe
 #
-# Vaultwarden (https://vw.zoe.dev.br), logged in with the personal API key
-# (SSO-compatible, no browser needed) + master password. Item:
+# Vaultwarden (https://vw.zoe.dev.br): log in with SSO (Firefox kiosk) or the
+# personal API key (no browser; Vaultwarden allows it with SSO enforced),
+# then unlock with the master password. Item:
 #   "nixos: <host>"  Login: password = zoe's password,
 #                    hidden custom field "disk passphrase" = disk encryption passphrase
 #
@@ -18,6 +19,9 @@
 
 REPO_URL="https://github.com/zoeleu/nixos"
 VAULT_URL="https://vw.zoe.dev.br"
+# Vaultwarden's fixed SSO organization identifier (what the server returns
+# for zoe@zoe.dev.br); passing it skips the "SSO identifier" page
+SSO_IDENTIFIER="00000000-01DC-01DC-01DC-000000000000"
 WORK=/tmp/nixos-config
 SECRETS=/run/install-secrets # tmpfs (RAM), removed at exit
 
@@ -106,18 +110,45 @@ read -rp "Type the disk name ($disk) to erase it and install '$host': " confirm
 item_name="nixos: $host"
 user_pw="" disk_pw="" vault_item=""
 echo
-read -rp "Get the passwords from Vaultwarden ($VAULT_URL)? [Y/n] " use_vault
-if [ "${use_vault,,}" != "n" ]; then
+bold "Passwords from Vaultwarden ($VAULT_URL):"
+echo "  1) SSO login in a full-screen browser (then your master password)"
+echo "  2) personal API key (web vault: Account settings > Security > Keys)"
+echo "  3) don't use the vault, type the passwords"
+read -rp "Choice? [1] " login_method
+login_method=${login_method:-1}
+if [ "$login_method" = 1 ] || [ "$login_method" = 2 ]; then
   bw config server "$VAULT_URL" >/dev/null
-  # The server requires SSO for password logins, and SSO needs a browser.
-  # The personal API key works without one (Vaultwarden allows it with SSO
-  # on); the master password then decrypts the vault.
-  bold "Log in to Vaultwarden with your personal API key"
-  echo "(web vault: Account settings > Security > Keys > View API key)"
-  read -rp "client_id: " BW_CLIENTID
-  read -rsp "client_secret: " BW_CLIENTSECRET; echo
-  export BW_CLIENTID BW_CLIENTSECRET
-  if bw login --apikey >/dev/null && BW_SESSION=$(bw unlock --raw) && [ -n "$BW_SESSION" ]; then
+  logged_in=0
+  if [ "$login_method" = 1 ]; then
+    # `bw login --sso` runs `xdg-open <url>` and waits for the browser to
+    # come back to http://localhost:8065. Our xdg-open opens Firefox in a
+    # kiosk (cage), as the console's user so it can use the screen; it's
+    # closed once bw has the login.
+    kiosk_user=${SUDO_USER:-nixos}
+    mkdir -p "$SECRETS/bin"
+    rm -rf /tmp/sso-firefox && install -d -o "$kiosk_user" -m 700 /tmp/sso-firefox
+    cat > "$SECRETS/bin/xdg-open" <<EOF
+#!/bin/sh
+setsid sudo -u "$kiosk_user" XDG_RUNTIME_DIR="/run/user/\$(id -u "$kiosk_user")" \\
+  cage -s -- firefox --kiosk --no-remote --profile /tmp/sso-firefox "\$1" \\
+  >/tmp/sso-kiosk.log 2>&1 &
+EOF
+    chmod 755 "$SECRETS/bin/xdg-open"
+    bold "Opening the SSO login full-screen. Sign in there; it closes by itself."
+    echo "(If the screen stays black or it hangs: wait 10 minutes, or press"
+    echo " Ctrl+Alt+F2 and run 'pkill cage'. Then pick the API key instead.)"
+    if PATH="$SECRETS/bin:$PATH" timeout 600 bw login --sso "$SSO_IDENTIFIER" >/dev/null; then logged_in=1; fi
+    pkill -f 'cage -s -- firefox' 2>/dev/null || true
+    rm -rf /tmp/sso-firefox
+    sleep 1; clear
+  else
+    read -rp "client_id: " BW_CLIENTID
+    read -rsp "client_secret: " BW_CLIENTSECRET; echo
+    export BW_CLIENTID BW_CLIENTSECRET
+    if bw login --apikey >/dev/null; then logged_in=1; fi
+  fi
+  if [ "$logged_in" = 1 ]; then bold "Unlock the vault:"; fi
+  if [ "$logged_in" = 1 ] && BW_SESSION=$(bw unlock --raw) && [ -n "$BW_SESSION" ]; then
     export BW_SESSION
     bw sync >/dev/null || true
     vault_item=$(bw list items --search "$item_name" | jq -c --arg n "$item_name" '[.[] | select(.name == $n)][0] // empty')

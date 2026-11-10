@@ -46,13 +46,14 @@ socket (`~/.bitwarden-ssh-agent.sock`).
 
 Hosts with a `disko.nix` (disk layout) install from the installer ISO,
 published by `.github/workflows/iso.yml` at
-https://github.com/zoeleu/nixos/releases/tag/installer:
+https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
 
 1. Write the ISO to a USB stick (or put it on Ventoy) and boot it.
 2. Connect to the internet (Ethernet works automatically; wifi: `nmtui`).
 3. Run `install-nixos`: pick the host and the disk to **erase**, then log in
-   to Vaultwarden with your **personal API key** (web vault: Account settings
-   > Security > Keys) + master password. It reads the vault item
+   to Vaultwarden with **SSO** (a full-screen Firefox opens) or your
+   **personal API key** (web vault: Account settings
+   > Security > Keys), then your master password. It reads the vault item
    `nixos: <host>` (password = zoe's password, hidden field
    `disk passphrase` = disk encryption passphrase); if missing it asks and
    offers to save them. Skip the vault to just type them. Then wait.

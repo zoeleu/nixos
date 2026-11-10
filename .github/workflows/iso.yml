@@ -1,8 +1,12 @@
-# Builds the installer ISO (installer/) and publishes it as the GitHub
-# release "installer" (replacing the previous ISO).
-#
-# Download: https://github.com/zoeleu/nixos/releases/tag/installer
+# Builds the installer ISO (installer/) and publishes it at
+#   https://nix.zoe.dev.br/nixos-zoe-installer.iso   (vps-main, Caddy)
 # Boot it, then run `install-nixos` (see installer/install-nixos.sh).
+#
+# Upload: the runner joins the tailnet as an ephemeral tag:ci device (Tailscale
+# OAuth client; the tailnet policy only lets tag:ci reach servers' SSH) and
+# rsyncs to deploy@vps-main, whose key may only write into /srv/nix (rrsync).
+#
+# Secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, DEPLOY_SSH_KEY.
 #
 # The ISO clones the latest config from GitHub at install time, so it only
 # needs rebuilding when installer/ changes (or for a newer kernel on it).
@@ -10,11 +14,6 @@ name: Installer ISO
 
 on:
   workflow_dispatch:
-    inputs:
-      connection_test:
-        description: Only test the connection to vps-main (no ISO build)
-        type: boolean
-        default: false
   push:
     branches: [main]
     paths:
@@ -22,33 +21,14 @@ on:
       - ".github/workflows/iso.yml"
 
 permissions:
-  contents: write # publish the release
+  contents: read
 
 concurrency:
   group: iso
   cancel-in-progress: true
 
 jobs:
-  # Joins the tailnet as an ephemeral tag:ci device (OAuth client, see the
-  # tailnet policy) and logs in to vps-main as "deploy" via Tailscale SSH.
-  connection-test:
-    if: inputs.connection_test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-      - name: Reach vps-main
-        run: |
-          tailscale status
-          tailscale ping -c 3 vps-main
-          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes deploy@vps-main \
-            'echo "logged in as $(id -un) on $(hostname)"; id; echo "home: $HOME"; df -h "$HOME"'
-
   iso:
-    if: ${{ !inputs.connection_test }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -64,27 +44,35 @@ jobs:
         run: |
           nix build --option log-lines 200 .#installer-iso
           iso=$(find -L result/iso -name '*.iso' | head -1)
-          cp "$iso" nixos-zoe-installer.iso
-          sha256sum nixos-zoe-installer.iso > nixos-zoe-installer.iso.sha256
-          ls -lh nixos-zoe-installer.iso
-          size=$(stat -c %s nixos-zoe-installer.iso)
-          # GitHub release files must be under 2 GiB
-          [ "$size" -lt 2147483648 ] || { echo "ISO is over 2 GiB"; exit 1; }
+          mkdir upload
+          cp "$iso" upload/nixos-zoe-installer.iso
+          (cd upload && sha256sum nixos-zoe-installer.iso > nixos-zoe-installer.iso.sha256)
+          ls -lh upload/
 
-      - name: Publish release "installer"
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Upload to vps-main
         env:
-          GH_TOKEN: ${{ github.token }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          notes="Installer ISO built from ${GITHUB_SHA::7}.
+          install -d -m 700 ~/.ssh
+          (umask 077; printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy)
+          # vps-main's host key, pinned (from ssh-keyscan over the tailnet)
+          echo 'vps-main ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMFaZTj1K9MZNxCrqQY+5xi3F2irGo9hoZiL5ALBlZph' > ~/.ssh/known_hosts
+          ssh_cmd="ssh -i $HOME/.ssh/deploy -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes"
+          # the ISO first (temp name on the server, renamed when complete), then its checksum
+          rsync -e "$ssh_cmd" --partial --delay-updates upload/nixos-zoe-installer.iso deploy@vps-main:/
+          rsync -e "$ssh_cmd" upload/nixos-zoe-installer.iso.sha256 deploy@vps-main:/
+          rm -f ~/.ssh/deploy
 
-          1. Write it to a USB stick (e.g. \`sudo dd if=nixos-zoe-installer.iso of=/dev/sdX bs=4M status=progress\`, or Ventoy).
-          2. Boot it, connect to the internet (wifi: \`nmtui\`).
-          3. Run \`install-nixos\` and follow the prompts.
-
-          It installs the latest config from main, not this commit's."
-          if gh release view installer >/dev/null 2>&1; then
-            gh release edit installer --notes "$notes" --target "$GITHUB_SHA"
-          else
-            gh release create installer --title "Installer ISO" --notes "$notes" --target "$GITHUB_SHA" --latest=false
-          fi
-          gh release upload installer nixos-zoe-installer.iso nixos-zoe-installer.iso.sha256 --clobber
+      - name: Check the download
+        run: |
+          want=$(cut -d' ' -f1 upload/nixos-zoe-installer.iso.sha256)
+          got=$(curl -fsSL https://nix.zoe.dev.br/nixos-zoe-installer.iso.sha256 | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "checksum on nix.zoe.dev.br doesn't match ($got)"; exit 1; }
+          size=$(curl -fsSI https://nix.zoe.dev.br/nixos-zoe-installer.iso | awk 'tolower($1)=="content-length:"{print $2}' | tr -d '\r')
+          echo "Published https://nix.zoe.dev.br/nixos-zoe-installer.iso ($((size / 1048576)) MB, sha256 $want)"
