@@ -19,7 +19,33 @@ hosts/<name>/        # one folder per machine (hostname = folder name)
 | `desktop` | AMD RX 9060 XT PC, Plasma, Incus for AI-agent VMs; installs from the installer ISO (not installed yet) |
 
 Shared everywhere: fish, pt_BR formats, Tailscale, Bitwarden (also as SSH
-agent and for signing git commits), Home Manager, claude-code.
+agent and for signing git commits), Home Manager, claude-code, and one look:
+Breeze Dark with a teal accent, a teal NixOS snowflake on the boot splash and
+wallpaper (`pkgs/artwork.nix` is the single place to change the colour).
+
+## The `os` command
+
+```bash
+os              # version, config commit, last/next automatic update, restart needed?
+os update       # update now
+os diff         # what the last update changed
+os rollback     # previous generation, and pause automatic updates
+os resume       # un-pause them (os update does too)
+os generations  # installed generations
+os clean [14d]  # delete old generations, free space (also runs weekly)
+os test [dir]   # try ~/configuration without committing, until reboot
+```
+
+## Unlocking the disks
+
+- **desktop**: the boot splash asks for the disk passphrase (keyboard).
+  `sudo` asks no password there.
+- **deck**: an on-screen keyboard asks for it on the touchscreen (a USB
+  keyboard still works); the splash appears after unlocking. To skip the
+  passphrase entirely, enrol the TPM once, on the Deck:
+  `sudo deck-tpm-enroll`. From then on it boots straight to Gaming Mode;
+  the passphrase stays valid as fallback, and zoe's home stays encrypted
+  with her login password. Undo: `sudo systemd-cryptenroll --wipe-slot=tpm2 <device>`.
 
 ## Usage
 
@@ -70,10 +96,20 @@ Hosts with a `disko.nix` (disk layout) install from the installer ISO,
 published by `.github/workflows/iso.yml` at
 https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
 
-1. Write the ISO to a USB stick (or put it on Ventoy) and boot it.
-2. Connect to the internet (Ethernet works automatically; wifi: `nmtui`).
-3. Run `install-nixos`: pick the host and the disk to **erase**, then log in
-   to Vaultwarden with **SSO** (a full-screen Firefox opens) or your
+1. Write the ISO to a USB stick (or put it on Ventoy) and boot it. It
+   starts the graphical installer; every window is a tab at the top
+   (Alt+Tab switches).
+2. Connect to the internet (Ethernet works automatically; wifi: pick the
+   network in the window).
+3. Choose what to do:
+   - **Automatic**: shown when the disk recorded in `hosts/<host>/disk.nix`
+     is in the machine (the desktop's SSD). One click, a 10-second
+     countdown you can cancel, then it erases that disk and installs.
+   - **Continue an interrupted installation**: resumes without erasing
+     (after a reboot it first asks the disk passphrase to unlock it).
+   - **Manual**: pick the host and the disk to **erase**, type its name.
+
+   Then log in to Vaultwarden with **SSO** (a Chromium tab opens) or your
    **personal API key** (web vault: Account settings
    > Security > Keys), then your master password. It reads the vault item
    `nixos: <host>` (password = zoe's password, hidden field
@@ -85,7 +121,20 @@ https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
    `hardware-configuration.nix` and `disk.nix` for the host, and made
    `/etc/nixos` zoe's, pushing over SSH).
 
+While it installs, the header bar has Chromium, Spotify, YouTube, a
+terminal, Bluetooth, sound and network. The image is free software only, so
+two things download after boot (the header says when they're ready):
+Widevine (needed by Spotify) and Claude Code. **Ask Claude** opens Claude
+Code with the installer's log; sign in with Google in the Chromium tab that
+opens (a passkey on your phone works over Bluetooth). If a step fails, the
+window offers **Troubleshoot with Claude** and **Resume**.
+
+Without the GUI (Ctrl+Alt+F2): `install-nixos` on the console, as before.
+
 ### Resuming an interrupted installation (never rerun the erase flow)
+
+The installer window offers this by itself ("Continue an interrupted
+installation"); by hand:
 
 Keep the existing LUKS root and EFI filesystems mounted at `/mnt` and
 `/mnt/boot`. If the machine rebooted, inspect `lsblk -f` and open/mount the

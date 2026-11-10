@@ -24,6 +24,12 @@
     # are built and tested with their own toolchain. Pinned to a commit at
     # least two weeks old; update deliberately.
     chaotic.url = "github:chaotic-cx/nyx/4831794e3211bfc2811cf4f5f5a6b20808d44f9a";
+    # Plasma settings (theme, accent colour, wallpaper) from Home Manager
+    plasma-manager = {
+      url = "github:nix-community/plasma-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
     # Declarative disk partitioning, used by the installer ISO
     disko = {
       url = "github:nix-community/disko";
@@ -60,8 +66,14 @@
           ./modules/secrets.nix
           ./modules/auto-upgrade.nix
           ./modules/avatar.nix
+          ./modules/branding.nix
+          ./modules/os-command.nix
           ./hosts/${name}
-          { networking.hostName = lib.mkDefault name; }
+          {
+            networking.hostName = lib.mkDefault name;
+            # the commit a system was built from: `os status`
+            system.configurationRevision = inputs.self.rev or inputs.self.dirtyRev or null;
+          }
         ] ++ lib.optional ciBuild ./hosts/${name}/ci.nix;
       };
     in
@@ -69,6 +81,17 @@
       nixosConfigurations = lib.genAttrs hosts (name: mkHost name false);
       ciConfigurations = lib.genAttrs ciHosts (name:
         mkHost name (!(builtins.elem name hosts)));
+
+      # VM tests:  nix build -L .#checks.x86_64-linux.<name>
+      checks.x86_64-linux = let
+        test = file: nixpkgs.legacyPackages.x86_64-linux.testers.runNixOSTest {
+          imports = [ file ];
+          node.specialArgs = { inherit inputs; };
+        };
+      in {
+        touch-unlock = test ./tests/touch-unlock.nix;   # Deck: touch keyboard, then splash
+        installer-gui = test ./tests/installer-gui.nix; # installer kiosk + GUI
+      };
 
       # Installer images (installer/), the same installer two ways:
       #   nix build .#installer-iso       USB stick / Ventoy

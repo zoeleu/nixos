@@ -68,6 +68,9 @@ in
   # Newest kernel for the newest amdgpu fixes (RDNA 4 needs 6.15+; both
   # this and the LTS kernel come prebuilt from cache.nixos.org)
   boot.kernelPackages = pkgs.linuxPackages_latest;
+  # Boot splash (themed in modules/branding.nix); it shows the disk
+  # passphrase prompt itself, typed on the keyboard as before
+  boot.plymouth.enable = true;
 
   # --- GPU: AMD Radeon RX 9060 XT (RDNA 4) ---
   hardware.graphics = {
@@ -92,6 +95,12 @@ in
 
   # --- SSH: key only ---
   services.openssh.settings.KbdInteractiveAuthentication = false;
+
+  # --- sudo: no password for zoe (wheel) ---
+  # The disk passphrase is the gate on this machine and SSH is key-only.
+  # Anything running as zoe can become root, so untrusted code and AI agents
+  # belong in Incus VMs / Podman, not in zoe's session.
+  security.sudo.wheelNeedsPassword = false;
 
   # --- Gaming ---
   programs.steam = {

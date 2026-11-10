@@ -4,6 +4,9 @@ set -euo pipefail
 # Installs one of the machines in https://github.com/zoeleu/nixos onto a disk.
 # Run on the installer ISO as root: install-nixos
 # Resume a mounted installation without formatting: install-nixos --resume <host>
+# After a reboot, unlock + mount it first (no formatting): install-nixos --mount <host>
+# The graphical installer (installer/gui.py) runs this same script with
+# INSTALL_UI=1 and answers its questions; see "GUI protocol" below.
 #
 #  1. clone the repo (latest main; falls back to the copy on the ISO)
 #  2. pick a host (one with hosts/<host>/disko.nix) and a disk
@@ -30,20 +33,52 @@ VAULT_URL="https://vw.zoe.dev.br"
 SSO_IDENTIFIER="00000000-01DC-01DC-01DC-000000000000"
 WORK=/tmp/nixos-config
 resume=0
+mount_only=0
 host=""
-if [ "${1:-}" = --resume ]; then
-  resume=1
+if [ "${1:-}" = --resume ] || [ "${1:-}" = --mount ]; then
+  if [ "$1" = --resume ]; then resume=1; else mount_only=1; fi
   host=${2:-}
   [ "$#" -eq 2 ] && [[ "$host" =~ ^[a-zA-Z0-9_-]+$ ]] || {
-    echo "Usage: install-nixos --resume <host>" >&2; exit 2;
+    echo "Usage: install-nixos $1 <host>" >&2; exit 2;
   }
 elif [ "$#" -ne 0 ]; then
-  echo "Usage: install-nixos [--resume <host>]" >&2; exit 2
+  echo "Usage: install-nixos [--resume <host> | --mount <host>]" >&2; exit 2
 fi
 
 red() { printf '\033[1;31m%s\033[0m\n' "$*"; }
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 die() { red "Error: $*"; exit 1; }
+
+# --- GUI protocol (INSTALL_UI=1, set by installer/gui.py) ---
+# Lines starting with @@ on the original stdout (fd 3) are for the GUI:
+#   @@STEP <n> <title>       step n of 7 started
+#   @@ASK <kind> <prompt>    answer expected as one line on stdin;
+#                            kind: text, secret, newsecret (GUI asks twice), yesno (y/n)
+# Choices made in the GUI arrive as INSTALL_HOST, INSTALL_DISK (a /dev path),
+# INSTALL_CONFIRMED (the disk's kernel name: erasing was confirmed there) and
+# INSTALL_VAULT_LOGIN (1 SSO, 2 API key, 3 none). The same variables work
+# without the GUI. INSTALL_UI_USER / INSTALL_WAYLAND_DISPLAY: where to open
+# the browser for the SSO login.
+UI=${INSTALL_UI:-0}
+exec 3>&1
+step() {
+  if [ "$UI" = 1 ]; then printf '@@STEP %s %s\n' "$1" "$2" >&3; else echo; bold "== $1/7 $2"; fi
+}
+ui_ask() {
+  local answer
+  printf '@@ASK %s %s\n' "$1" "$2" >&3
+  IFS= read -r answer || die "the installer window went away"
+  printf '%s' "$answer"
+}
+# One line of visible / hidden input; prints it
+ask_line() {
+  local a
+  if [ "$UI" = 1 ]; then ui_ask text "$1"; else read -rp "$1: " a; printf '%s' "$a"; fi
+}
+ask_hidden() {
+  local a
+  if [ "$UI" = 1 ]; then ui_ask secret "$1"; else read -rsp "$1: " a; echo >&2; printf '%s' "$a"; fi
+}
 
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
 exec 9>/run/install-nixos.lock
@@ -76,6 +111,7 @@ trap 'exit 143' TERM
 # Ask for a secret twice (hidden); prints it
 ask_secret() {
   local prompt=$1 a b
+  if [ "$UI" = 1 ]; then ui_ask newsecret "$prompt"; return; fi
   while true; do
     read -rsp "$prompt: " a; echo >&2
     read -rsp "Again: " b; echo >&2
@@ -87,6 +123,7 @@ ask_secret() {
 bold "== NixOS installer for $REPO_URL"
 
 # --- 1. network + repo ---
+step 1 "Fetch the configuration"
 if ! curl -fsS --max-time 10 -o /dev/null https://cache.nixos.org/nix-cache-info; then
   red "No internet connection. Plug in Ethernet (or run 'nmtui'), then run install-nixos again."
   exit 1
@@ -135,10 +172,37 @@ if [ "$resume" = 1 ]; then
 
 fi
 
+# --- 1b. --mount: unlock and mount an existing installation, then resume ---
+# For an installation interrupted by a reboot. Never formats: disko's mount
+# mode only opens LUKS and mounts. Needs the disk in the repo (disk.nix).
+if [ "$mount_only" = 1 ]; then
+  step 2 "Unlock the existing installation"
+  [ -f "hosts/$host/disko.nix" ] || die "host '$host' has no disko.nix"
+  [ -s "hosts/$host/disk.nix" ] || die "hosts/$host/disk.nix is not in the repository; mount the disk by hand (README: Resuming)"
+  if [ ! -s "hosts/$host/hardware-configuration.nix" ]; then
+    nixos-generate-config --no-filesystems --show-hardware-config > "hosts/$host/hardware-configuration.nix"
+  fi
+  git add "hosts/$host/disk.nix" "hosts/$host/hardware-configuration.nix"
+  ask_hidden "Disk encryption passphrase of '$host'" > "$SECRETS/disk.key"
+  ln -sf "$SECRETS/disk.key" /tmp/disk.key
+  disko --mode mount --flake ".#$host" \
+    || die "could not unlock and mount the existing installation; nothing was changed"
+  rm -f /tmp/disk.key
+  rm -rf "$SECRETS"
+  trap - EXIT
+  exec 9>&-
+  exec "$0" --resume "$host"
+fi
+
 if [ "$resume" = 0 ]; then
+step 2 "Check machine and disk"
 # --- 2a. host ---
 mapfile -t hosts < <(for d in hosts/*/; do [ -f "$d/disko.nix" ] && basename "$d"; done)
 [ "${#hosts[@]}" -gt 0 ] || die "no host in the repo has a disko.nix"
+if [ -n "${INSTALL_HOST:-}" ]; then
+  host=$INSTALL_HOST
+  [[ "$host" =~ ^[a-zA-Z0-9_-]+$ ]] && [ -f "hosts/$host/disko.nix" ] || die "host '$host' can't be installed (no disko.nix)"
+else
 echo
 bold "Machines that can be installed:"
 for i in "${!hosts[@]}"; do echo "  $((i + 1))) ${hosts[$i]}"; done
@@ -146,9 +210,15 @@ read -rp "Install which one? [1] " n
 n=${n:-1}
 host=${hosts[$((n - 1))]:-}
 [ -n "$host" ] || die "invalid choice"
+fi
 
 # --- 2b. disk ---
 boot_disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE /iso 2>/dev/null)" 2>/dev/null || true)
+if [ -n "${INSTALL_DISK:-}" ]; then
+  disk=$(basename "$(readlink -f "$INSTALL_DISK")")
+  [ -b "/dev/$disk" ] && [ "$(lsblk -dno TYPE "/dev/$disk")" = disk ] || die "$INSTALL_DISK is not a disk"
+  [ "$disk" != "${boot_disk:-}" ] || die "$INSTALL_DISK is the disk this installer runs from"
+else
 echo
 bold "Disks (the USB stick this installer runs from is hidden):"
 mapfile -t disks < <(lsblk -dno NAME,TYPE | awk -v skip="${boot_disk:-none}" '$2=="disk" && $1!=skip && $1!~/^(zram|loop)/ {print $1}')
@@ -161,6 +231,7 @@ done
 read -rp "Install onto which disk? " n
 disk=${disks[$((n - 1))]:-}
 [ -n "$disk" ] || die "invalid choice"
+fi
 # stable name for the config: /dev/disk/by-id/..., not /dev/nvme0n1
 byid=$(find /dev/disk/by-id/ -lname "*/$disk" ! -name '*-part*' | { grep -v '/wwn-\|/nvme-eui\.\|_[0-9]$' || true; } | sort | head -1)
 [ -n "$byid" ] || byid=$(find /dev/disk/by-id/ -lname "*/$disk" | sort | head -1)
@@ -171,11 +242,16 @@ red "ALL DATA ON THIS DISK WILL BE ERASED:"
 echo "  $byid"
 echo "  $(lsblk -dno SIZE,MODEL "/dev/$disk")"
 lsblk -no NAME,SIZE,FSTYPE,LABEL "/dev/$disk" | tail -n +2 | sed 's/^/    /'
-read -rp "Type the disk name ($disk) to erase it and install '$host': " confirm
-[ "$confirm" = "$disk" ] || die "not confirmed, nothing was changed"
+if [ "${INSTALL_CONFIRMED:-}" = "$disk" ]; then
+  echo "Erasing it was confirmed in the installer window."
+else
+  read -rp "Type the disk name ($disk) to erase it and install '$host': " confirm
+  [ "$confirm" = "$disk" ] || die "not confirmed, nothing was changed"
+fi
 fi
 
 # --- 3. passwords: Vaultwarden, or ask ---
+step 3 "Sign in and collect secrets"
 item_name="nixos: $host"
 user_pw="" disk_pw="" vault_item="" attic_token=""
 echo
@@ -190,6 +266,11 @@ if [ "$vault_status" = unlocked ] || [ "$vault_status" = locked ]; then
   logged_in=1
   login_method=reuse
   echo "Reusing the existing Bitwarden login ($vault_status)."
+elif [ -n "${INSTALL_VAULT_LOGIN:-}" ]; then
+  login_method=$INSTALL_VAULT_LOGIN
+elif [ "$UI" = 1 ]; then
+  login_method=$(ui_ask text "Passwords from the vault: type 1 for single sign-on, 2 for the API key, 3 to type them instead")
+  login_method=${login_method:-1}
 else
   echo "  1) SSO login in a full-screen browser (then your master password)"
   echo "  2) personal API key (web vault: Account settings > Security > Keys)"
@@ -204,31 +285,56 @@ if [ "$login_method" = 1 ] || [ "$login_method" = 2 ]; then
     # come back to http://localhost:8065. Our xdg-open opens Firefox in a
     # kiosk (cage), as the console's user so it can use the screen; it's
     # closed once bw has the login.
-    kiosk_user=${SUDO_USER:-nixos}
+    kiosk_user=${INSTALL_UI_USER:-${SUDO_USER:-nixos}}
     mkdir -p "$SECRETS/bin"
-    rm -rf /tmp/sso-firefox && install -d -o "$kiosk_user" -m 700 /tmp/sso-firefox
-    cat > "$SECRETS/bin/xdg-open" <<EOF
+    if [ -n "${INSTALL_WAYLAND_DISPLAY:-}" ]; then
+      # Graphical installer: a normal browser window in its session
+      cat > "$SECRETS/bin/xdg-open" <<EOF
 #!/bin/sh
 setsid sudo -u "$kiosk_user" XDG_RUNTIME_DIR="/run/user/\$(id -u "$kiosk_user")" \\
-  cage -s -- firefox --kiosk --no-remote --profile /tmp/sso-firefox "\$1" \\
+  WAYLAND_DISPLAY="$INSTALL_WAYLAND_DISPLAY" /run/current-system/sw/bin/installer-browser "\$1" >/tmp/sso-browser.log 2>&1 &
+EOF
+      bold "Sign in to the vault in the browser window that opens."
+    else
+      rm -rf /tmp/sso-chromium && install -d -o "$kiosk_user" -m 700 /tmp/sso-chromium
+      cat > "$SECRETS/bin/xdg-open" <<EOF
+#!/bin/sh
+setsid sudo -u "$kiosk_user" XDG_RUNTIME_DIR="/run/user/\$(id -u "$kiosk_user")" \\
+  cage -s -- chromium --kiosk --no-first-run --user-data-dir=/tmp/sso-chromium "\$1" \\
   >/tmp/sso-kiosk.log 2>&1 &
 EOF
+      bold "Opening the SSO login full-screen. Sign in there; it closes by itself."
+      echo "(If the screen stays black or it hangs: wait 10 minutes, or press"
+      echo " Ctrl+Alt+F2 and run 'pkill cage'. Then pick the API key instead.)"
+    fi
     chmod 755 "$SECRETS/bin/xdg-open"
-    bold "Opening the SSO login full-screen. Sign in there; it closes by itself."
-    echo "(If the screen stays black or it hangs: wait 10 minutes, or press"
-    echo " Ctrl+Alt+F2 and run 'pkill cage'. Then pick the API key instead.)"
     if PATH="$SECRETS/bin:$PATH" timeout 600 bw login --sso "$SSO_IDENTIFIER" >/dev/null; then logged_in=1; fi
-    pkill -f 'cage -s -- firefox' 2>/dev/null || true
-    rm -rf /tmp/sso-firefox
-    sleep 1; clear
+    if [ -z "${INSTALL_WAYLAND_DISPLAY:-}" ]; then
+      pkill -f 'cage -s -- chromium' 2>/dev/null || true
+      rm -rf /tmp/sso-chromium
+      sleep 1; clear
+    fi
   else
-    read -rp "client_id: " BW_CLIENTID
-    read -rsp "client_secret: " BW_CLIENTSECRET; echo
+    BW_CLIENTID=$(ask_line "Vault API key client_id")
+    BW_CLIENTSECRET=$(ask_hidden "Vault API key client_secret")
     export BW_CLIENTID BW_CLIENTSECRET
     if bw login --apikey >/dev/null; then logged_in=1; fi
   fi
 fi
-if [ "$logged_in" = 1 ] && [ "$vault_status" != unlocked ]; then bold "Unlock the vault:"; fi
+if [ "$logged_in" = 1 ] && [ "$vault_status" != unlocked ]; then
+  bold "Unlock the vault:"
+  if [ "$UI" = 1 ]; then
+    # asked in the window (bw would ask on a terminal); three attempts
+    for attempt in 1 2 3; do
+      BW_PASSWORD=$(ui_ask secret "Vault master password (attempt $attempt of 3)")
+      export BW_PASSWORD
+      if vault_session_unlock; then break; fi
+      # no terminal for bw to ask on: after the last attempt, go on without the vault
+      if [ "$attempt" = 3 ]; then logged_in=0; fi
+    done
+    unset BW_PASSWORD
+  fi
+fi
 if [ "$logged_in" = 1 ] && vault_session_unlock; then
     export BW_SESSION
     bw sync >/dev/null || die "vault sync failed; refusing to use stale credentials"
@@ -267,7 +373,7 @@ if [ ! -s "$SECRETS/age.key" ] && [ "$resume" = 1 ]; then
   ssh-to-age -private-key -i /mnt/etc/ssh/ssh_host_ed25519_key > "$SECRETS/age.key"
 fi
 if [ ! -s "$SECRETS/age.key" ] || ! SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt --output-type json secrets/attic.yaml > "$SECRETS/attic.json" 2>/dev/null; then
-  read -rsp "SOPS admin age secret key (Bitwarden 'sops: age key'): " age_key; echo
+  age_key=$(ask_hidden "SOPS admin age secret key (Bitwarden 'sops: age key')")
   [ -n "$age_key" ] || die "SOPS access is required; no disk was formatted"
   printf '%s\n' "$age_key" > "$SECRETS/age.key"
   age_key=""
@@ -291,7 +397,8 @@ asked=0
 if [ "$resume" = 0 ] && [ -z "$disk_pw" ]; then disk_pw=$(ask_secret "Disk encryption passphrase (typed at every boot)"); asked=1; fi
 if [ -z "$user_pw" ]; then user_pw=$(ask_secret "Password for zoe"); asked=1; fi
 if [ "$resume" = 0 ] && [ -n "$BW_SESSION" ] && [ "$asked" = 1 ]; then
-  read -rp "Save these to the vault as '$item_name'? [Y/n] " save
+  if [ "$UI" = 1 ]; then save=$(ui_ask yesno "Save these passwords to the vault as '$item_name'?")
+  else read -rp "Save these to the vault as '$item_name'? [Y/n] " save; fi
   if [ "${save,,}" != "n" ]; then
     if [ -n "$vault_item" ]; then
       jq --arg pw "$user_pw" --arg disk "$disk_pw" '
@@ -320,6 +427,7 @@ nixos-generate-config --no-filesystems --show-hardware-config > "hosts/$host/har
 git add "hosts/$host/disk.nix" "hosts/$host/hardware-configuration.nix"
 
 # --- 5. partition, encrypt, format, mount ---
+step 4 "Partition and encrypt the disk"
 # disko.nix reads the passphrase from /tmp/disk.key; keep the real file in
 # RAM-only $SECRETS and link it there only for this step
 echo
@@ -331,6 +439,7 @@ rm -f /tmp/disk.key "$SECRETS/disk.key"
 fi
 
 # --- 5b. secrets: this machine's SSH host key decrypts secrets/*.yaml ---
+step 5 "Enrol the machine's secrets"
 # Create the host key now (instead of on first boot) so its age key can be
 # added to .sops.yaml and the secrets re-encrypted before installing.
 mkdir -p /mnt/etc/ssh
@@ -359,7 +468,10 @@ done
 rm -f "$SECRETS/age.key" "$SECRETS/host-age.key"
 
 # --- 6. install ---
-mkdir -p /mnt/etc
+step 6 "Install NixOS"
+mkdir -p /mnt/etc /mnt/var/lib/nixos-install
+# which host this half-installed disk is (the GUI offers to resume it)
+printf '%s\n' "$host" > /mnt/var/lib/nixos-install/host
 if [ "$resume" = 0 ]; then
   [ ! -e /mnt/etc/nixos ] || die "/mnt/etc/nixos already exists; preserve it and use --resume"
   cp -a "$WORK" /mnt/etc/nixos
@@ -386,6 +498,7 @@ nixos-install --flake "/mnt/etc/nixos#$host" --no-root-passwd --no-channel-copy 
 rm -rf /mnt/var/tmp/nix-build
 
 # --- 7a. zoe's password (stored hashed in /etc/shadow) ---
+step 7 "Finish up"
 printf 'zoe:%s\n' "$user_pw" | nixos-enter --root /mnt -c 'chpasswd' \
   || die "setting zoe's password failed; run: nixos-enter --root /mnt -c 'passwd zoe'"
 user_pw="" disk_pw=""

@@ -1,6 +1,6 @@
 # Builds the installer ISO (installer/) and publishes it at
 #   https://nix.zoe.dev.br/nixos-zoe-installer.iso   (vps-main, Caddy)
-# Boot it, then run `install-nixos` (see installer/install-nixos.sh).
+# Boot it: the graphical installer starts (installer/gui.py, driving install-nixos.sh).
 #
 # Upload: the runner joins the tailnet as an ephemeral tag:ci device (Tailscale
 # OAuth client; the tailnet policy only lets tag:ci reach servers' SSH) and
@@ -17,11 +17,13 @@ on:
   pull_request:
     paths:
       - "installer/**"
+      - "pkgs/artwork.nix"
       - ".github/workflows/iso.yml"
   push:
     branches: [main]
     paths:
       - "installer/**"
+      - "pkgs/artwork.nix"
       - ".github/workflows/iso.yml"
 
 permissions:

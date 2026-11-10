@@ -31,7 +31,8 @@ vault_session_status() {
 
 vault_session_unlock() {
   if [ "$(vault_session_status)" != unlocked ]; then
-    if ! BW_SESSION=$(bw unlock --raw); then
+    # BW_PASSWORD: master password asked by the graphical installer
+    if ! BW_SESSION=$(if [ -n "${BW_PASSWORD:-}" ]; then bw unlock --raw --passwordenv BW_PASSWORD; else bw unlock --raw; fi); then
       BW_SESSION=""
       rm -f "$VAULT_STATE/session"
       return 1

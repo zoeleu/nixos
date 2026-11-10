@@ -10,6 +10,8 @@ let
   bitwarden-agent = "${config.home.homeDirectory}/.bitwarden-ssh-agent.sock";
 in
 {
+  imports = [ ./plasma.nix ]; # every machine runs Plasma
+
   home.username = "zoe";
   home.homeDirectory = "/home/zoe";
 

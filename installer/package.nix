@@ -21,8 +21,8 @@ pkgs.writeShellApplication {
     yq-go
     openssh       # ssh-keygen (host key)
     jq
-    cage
-    firefox
+    cage          # SSO login without the graphical installer
+    chromium
   ];
   # the repo as of this image build, if GitHub can't be reached
   runtimeEnv.ISO_REPO = "${inputs.self}";

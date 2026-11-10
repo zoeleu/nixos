@@ -6,6 +6,7 @@
     ./hardware-configuration.nix
     ./ccache.nix
     ./pxe.nix
+    ./touch-unlock.nix
     inputs.jovian.nixosModules.default
   ];
 
@@ -14,6 +15,19 @@
   boot.loader.efi.canTouchEfiVariables = true;
   # Kernel: Jovian's Steam Deck kernel (set by jovian.devices.steamdeck).
   boot.initrd.luks.devices."luks-70a00096-ad77-4ee4-ba6e-f712e5f52d82".device = "/dev/disk/by-uuid/70a00096-ad77-4ee4-ba6e-f712e5f52d82";
+
+  # --- Disk unlock: TPM, else touch keyboard (./touch-unlock.nix) ---
+  # Both LUKS devices (root, swap) try the TPM first and fall back to the
+  # passphrase, so nothing changes until the TPM is enrolled, once, on the
+  # Deck itself:  sudo deck-tpm-enroll   (asks for the disk passphrase)
+  # The passphrase keeps working afterwards. Tradeoff: with the TPM enrolled
+  # the Deck boots to Gaming Mode unattended, so the disk passphrase no longer
+  # protects the `deck` user's files from someone holding the Deck; zoe's
+  # home stays encrypted (fscrypt, login password). Bound to PCR 7 (Secure
+  # Boot state), which survives kernel and firmware updates.
+  boot.initrd.availableKernelModules = [ "tpm_crb" "tpm_tis" ];
+  boot.initrd.luks.devices."luks-028a1e8c-165a-4a27-84ab-0356af08b6fc".crypttabExtraOpts = [ "tpm2-device=auto" ];
+  boot.initrd.luks.devices."luks-70a00096-ad77-4ee4-ba6e-f712e5f52d82".crypttabExtraOpts = [ "tpm2-device=auto" ];
 
   # --- Jovian ---
   jovian.devices.steamdeck.enable = true;
@@ -44,7 +58,21 @@
 
   # --- fscrypt: zoe's home is encrypted, unlocked by the login password ---
   security.pam.enableFscrypt = true;
-  environment.systemPackages = [ pkgs.fscrypt ];
+  environment.systemPackages = [
+    pkgs.fscrypt
+    (pkgs.writeShellApplication {
+      name = "deck-tpm-enroll";
+      runtimeInputs = [ config.systemd.package ];
+      text = ''
+        [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+        for uuid in 028a1e8c-165a-4a27-84ab-0356af08b6fc 70a00096-ad77-4ee4-ba6e-f712e5f52d82; do
+          # replaces an earlier TPM enrolment; passphrase slots are untouched
+          systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 "/dev/disk/by-uuid/$uuid"
+        done
+        echo "Done. To undo: systemd-cryptenroll --wipe-slot=tpm2 <device>"
+      '';
+    })
+  ];
 
   # Home Manager can't write into zoe's home while it's locked (at boot):
   # skip it then instead of failing; it runs on the next rebuild while
@@ -96,5 +124,10 @@
   };
 
   home-manager.users.zoe.home.stateVersion = "26.11"; # never change
+  # Desktop Mode runs as deck: same Plasma look as zoe's
+  home-manager.users.deck = {
+    imports = [ ../../home/plasma.nix ];
+    home.stateVersion = "26.11"; # never change
+  };
   system.stateVersion = "26.11"; # first install's version, never change
 }

@@ -1,5 +1,5 @@
 # Shared by every machine in ./hosts
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, inputs, ... }:
 
 {
   # --- Nix ---
@@ -73,6 +73,7 @@
     useGlobalPkgs = true;
     useUserPackages = true;
     backupFileExtension = "hm-backup"; # move pre-existing files aside instead of failing
+    sharedModules = [ inputs.plasma-manager.homeModules.plasma-manager ];
     users.zoe = ../home/common.nix;    # hosts add their own parts + home.stateVersion
   };
 
