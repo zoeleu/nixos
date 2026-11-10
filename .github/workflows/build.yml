@@ -82,6 +82,9 @@ jobs:
     if: needs.prepare.outputs.heavy != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    permissions:
+      contents: read
+      actions: write # delete old ccache entries
     strategy:
       fail-fast: false
       matrix:
@@ -129,10 +132,28 @@ jobs:
           du -sh /var/cache/ccache
           if [ -n "$(ls -A /var/cache/ccache)" ]; then echo "save=true" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/cache/save@v4
+        id: save-ccache
         if: always() && steps.ccache.outputs.save == 'true'
         with:
           path: /var/cache/ccache
           key: ccache-${{ matrix.host }}-${{ matrix.pkg }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Keep only the newest ccache per package (the kernel's alone is ~3.5 GB;
+      # GitHub allows 10 GB per repo). Only after the new one was saved.
+      - name: Delete older ccache entries of this package
+        if: always() && steps.save-ccache.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: ccache-${{ matrix.host }}-${{ matrix.pkg }}-
+          KEEP: ccache-${{ matrix.host }}-${{ matrix.pkg }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          # exactly <prefix><run id>-<attempt>: "graphics-" must not match "graphics-32bit-..."
+          gh cache list -R "$GITHUB_REPOSITORY" --key "$PREFIX" --limit 100 --json id,key \
+            --jq ".[] | select((.key | test(\"^\" + env.PREFIX + \"[0-9]+-[0-9]+$\")) and .key != env.KEEP) | \"\(.id) \(.key)\"" \
+            | while read -r id key; do
+                echo "deleting $key"
+                gh cache delete -R "$GITHUB_REPOSITORY" "$id"
+              done
 
   build:
     needs: [prepare, heavy]
