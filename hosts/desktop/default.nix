@@ -52,7 +52,6 @@ in
   boot.kernelModules = [ "bfq" ];
   services.udev.extraRules = ''
     ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*|nvme[0-9]*n[0-9]*|mmcblk[0-9]*", ATTR{queue/scheduler}="bfq"
-    SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="pn532", TAG+="uaccess"
   '';
 
   # --- Bluetooth (Plasma's Bluetooth settings; audio goes through PipeWire,
@@ -159,6 +158,12 @@ in
   # /etc/nfc/libnfc.conf. The udev rule gives the adapter a fixed name
   # (ttyUSB numbers change) and lets whoever sits at the machine open it,
   # so no dialout group is needed.
+  # numbered below 73: that's where udev turns the uaccess tag into access
+  services.udev.packages = [
+    (pkgs.writeTextDir "lib/udev/rules.d/70-pn532.rules" ''
+      SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="pn532", TAG+="uaccess"
+    '')
+  ];
   environment.etc."nfc/libnfc.conf".text = ''
     allow_autoscan = false
     device.name = "PN532 (CP2102)"
