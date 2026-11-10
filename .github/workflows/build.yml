@@ -1,17 +1,18 @@
-# Builds every machine in ./hosts and pushes the results to Cachix, so the
-# machines download instead of compiling.
+# Builds every machine in ./hosts and pushes the results to our private
+# Attic cache (https://cache.zoe.dev.br/nixos), so the machines download
+# instead of compiling.
 #
 #   prepare  - (weekly: nix flake update), list hosts and their slow packages
 #   heavy    - one parallel job per slow package (ci.heavyPackages, see modules/ci.nix)
-#   build    - one job per host: the full system; slow packages come from Cachix
+#   build    - one job per host: the full system; slow packages come from Attic
 #   commit   - weekly: commit the new flake.lock if every host built
 #
-# Every job pushes each compiled package to Cachix as soon as it's built
-# (unfree packages and anything depending on them are never pushed).
+# Every job joins the tailnet (tag:ci) and pushes each new store path to
+# Attic as soon as it appears (attic watch-store, over Tailscale to
+# vps-main:8090). The cache is private, so unfree packages are cached too.
 #
-# Setup (once):
-#   - repo variable  CACHIX_CACHE      = your cache name   (Settings > Secrets and variables > Actions > Variables)
-#   - repo secret    CACHIX_AUTH_TOKEN = a cachix auth token (... > Secrets)
+# Secrets: ATTIC_TOKEN (push+pull, Bitwarden "attic: ci token"),
+#          TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET (Tailscale OAuth client, tag:ci)
 name: Build
 
 on:
@@ -105,8 +106,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           host: ${{ matrix.host }}
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          attic-token: ${{ secrets.ATTIC_TOKEN }}
+          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build ${{ matrix.pkg }}
@@ -114,9 +116,6 @@ jobs:
 
       - uses: ./.github/actions/finish-push
         if: always()
-        with:
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       # save even if the build failed: the object files that did compile
       # make the retry faster
@@ -154,8 +153,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           host: ${{ matrix.host }}
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          attic-token: ${{ secrets.ATTIC_TOKEN }}
+          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build ${{ matrix.host }}
@@ -163,9 +163,6 @@ jobs:
 
       - uses: ./.github/actions/finish-push
         if: always()
-        with:
-          cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
   commit:
     needs: [prepare, build]

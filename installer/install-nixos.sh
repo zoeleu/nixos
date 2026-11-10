@@ -14,6 +14,8 @@
 # then unlock with the master password. Item:
 #   "nixos: <host>"  Login: password = zoe's password,
 #                    hidden custom field "disk passphrase" = disk encryption passphrase
+#   "nixos: attic"   Login: password = Attic pull token -> /etc/nix/netrc
+#                    (private binary cache https://cache.zoe.dev.br/nixos)
 #
 # Nothing is pushed: after the first boot, commit and push the two new files.
 
@@ -108,7 +110,7 @@ read -rp "Type the disk name ($disk) to erase it and install '$host': " confirm
 
 # --- 3. passwords: Vaultwarden, or ask ---
 item_name="nixos: $host"
-user_pw="" disk_pw="" vault_item=""
+user_pw="" disk_pw="" vault_item="" attic_token=""
 echo
 bold "Passwords from Vaultwarden ($VAULT_URL):"
 echo "  1) SSO login in a full-screen browser (then your master password)"
@@ -158,6 +160,16 @@ EOF
       echo "Found '$item_name' in the vault."
     else
       echo "No '$item_name' item in the vault yet."
+    fi
+    # Pull token for the private Attic cache (cache.zoe.dev.br)
+    attic_token=$(bw list items --search "nixos: attic" | jq -r '[.[] | select(.name == "nixos: attic")][0].login.password // empty')
+    if [ -n "$attic_token" ]; then
+      printf 'machine cache.zoe.dev.br\npassword %s\n' "$attic_token" > "$SECRETS/netrc"
+      chmod 600 "$SECRETS/netrc"
+      attic_token=""
+      echo "Found the Attic cache token."
+    else
+      red "No 'nixos: attic' item in the vault: packages from cache.zoe.dev.br can't be downloaded and will be built locally."
     fi
   else
     BW_SESSION=""
@@ -215,10 +227,17 @@ keys=$(nix eval --raw ".#nixosConfigurations.$host.config.nix.settings.trusted-p
 mkdir -p /mnt/var/tmp/nix-build
 echo
 bold "Installing '$host'. This downloads several GB and may compile a few packages."
+netrc_opts=()
+if [ -f "$SECRETS/netrc" ]; then
+  # the private Attic cache, for this install and for the new system
+  netrc_opts=(--option netrc-file "$SECRETS/netrc")
+  install -D -m 600 "$SECRETS/netrc" /mnt/etc/nix/netrc
+fi
 nixos-install --flake "/mnt/etc/nixos#$host" --no-root-passwd --no-channel-copy \
   --option build-dir /mnt/var/tmp/nix-build \
   --option extra-substituters "$subs" \
   --option extra-trusted-public-keys "$keys" \
+  "${netrc_opts[@]}" \
   || die "nixos-install failed (fix and re-run: the disk is still mounted at /mnt)"
 rm -rf /mnt/var/tmp/nix-build
 

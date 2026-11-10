@@ -9,7 +9,7 @@ home/common.nix      # zoe's Home Manager config shared by all machines
 hosts/<name>/        # one folder per machine (hostname = folder name)
   default.nix
   hardware-configuration.nix
-ci/                  # helpers for GitHub Actions
+.github/              # CI workflows (build, installer ISO) and shared actions
 ```
 
 | Host | Machine |
@@ -103,14 +103,17 @@ be prepared before it's installed.
    separate runners at the same time.
 2. Then each host's full system builds, downloading those from the cache.
 
-Every job pushes each compiled package to Cachix as soon as it finishes,
-and pushes whatever finished even if the build fails. Unfree packages
-(Steam, claude-code, ...) and anything depending on them are never pushed,
-since the cache is public.
+Every job joins the tailnet and pushes each new package to the private
+Attic cache as soon as it appears (`attic watch-store`), including when the
+build fails. Packages already on cache.nixos.org are skipped. Unfree
+packages are cached too, since only token holders can download.
 
 To add a slow package to the parallel jobs, add it to `ci.heavyPackages` in
 the host's `default.nix`.
 
-Cache: https://zoeleu.cachix.org. Setup: repo variable `CACHIX_CACHE` (cache name) and secret
-`CACHIX_AUTH_TOKEN`, then add the cache's URL and public key in
-`modules/common.nix`.
+Cache: https://cache.zoe.dev.br/nixos (Attic on vps-main, behind Caddy +
+Cloudflare; private, 30-day retention of unused packages). Machines
+authenticate with the pull token in `/etc/nix/netrc` (Bitwarden item
+`nixos: attic`; the installer writes it). CI uploads over Tailscale to
+`http://vps-main:8090`. Secrets: `ATTIC_TOKEN`, `TS_OAUTH_CLIENT_ID`,
+`TS_OAUTH_SECRET`.

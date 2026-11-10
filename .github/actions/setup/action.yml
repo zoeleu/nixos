@@ -1,21 +1,24 @@
 name: Set up Nix for a host
 description: >
-  Frees disk space, installs Nix with the host's binary caches, finds the
-  host's unfree packages, and starts pushing compiled packages to Cachix as
-  soon as each one finishes.
+  Frees disk space, installs Nix with the host's binary caches (incl. our
+  private Attic cache), joins the tailnet, and starts pushing every new
+  store path to Attic as soon as it appears (`attic watch-store`).
 
 inputs:
   host:
     description: Name of the host in nixosConfigurations
     required: true
-  cachix-cache:
-    description: Cachix cache name (empty = don't use Cachix)
+  attic-token:
+    description: Attic token (push+pull on cache "nixos"); empty = no Attic
     default: ""
-  cachix-token:
-    description: Cachix auth token
+  ts-oauth-client-id:
+    description: Tailscale OAuth client ID (tag:ci), to reach vps-main for uploads
+    default: ""
+  ts-oauth-secret:
+    description: Tailscale OAuth client secret
     default: ""
   push:
-    description: Push builds to Cachix ("true"/"false")
+    description: Push builds to Attic ("true"/"false")
     default: "true"
 
 runs:
@@ -29,62 +32,49 @@ runs:
 
     - uses: cachix/install-nix-action@v31
 
-    - name: Use the host's binary caches, queue what gets compiled
+    - name: Use the host's binary caches
       shell: bash
       env:
         HOST: ${{ inputs.host }}
+        ATTIC_TOKEN: ${{ inputs.attic-token }}
       run: |
         cfg=".#nixosConfigurations.$HOST.config.nix.settings"
         subs=$(nix eval --raw "$cfg.substituters" --apply 'builtins.concatStringsSep " "')
         keys=$(nix eval --raw "$cfg.trusted-public-keys" --apply 'builtins.concatStringsSep " "')
-        # Runs after every *local* build (not downloads): queue its outputs
-        printf '#!/bin/sh\necho "$OUT_PATHS" | tr " " "\\n" >> /tmp/built-paths\n' | sudo tee /etc/nix/record-built
-        sudo chmod 755 /etc/nix/record-built
-        sudo touch /tmp/built-paths; sudo chmod 666 /tmp/built-paths
+        # Attic is private: downloads from cache.zoe.dev.br need the token
+        if [ -n "$ATTIC_TOKEN" ]; then
+          printf 'machine cache.zoe.dev.br\npassword %s\n' "$ATTIC_TOKEN" | sudo tee /etc/nix/netrc >/dev/null
+          sudo chmod 600 /etc/nix/netrc
+        fi
         # ccache folder for packages wrapped with ccache (see hosts/*/ccache.nix);
         # the workflow restores/saves it with actions/cache
         sudo mkdir -p /var/cache/ccache; sudo chmod a+rwx /var/cache/ccache
         {
           echo "extra-substituters = $subs"
           echo "extra-trusted-public-keys = $keys"
-          echo "post-build-hook = /etc/nix/record-built"
+          echo "netrc-file = /etc/nix/netrc"
           echo "extra-sandbox-paths = /var/cache/ccache"
         } | sudo tee -a /etc/nix/nix.conf
         sudo systemctl restart nix-daemon
 
-    # Unfree software (Steam, claude-code, ...) may not be redistributed, so
-    # it (and anything depending on it) never goes to the public cache.
-    - name: Find unfree packages
-      shell: bash
-      env:
-        HOST: ${{ inputs.host }}
-      run: |
-        names=$(nix eval --impure --raw --file ci/unfree-names.nix 2>&1 >/dev/null \
-          | sed -n 's/^trace: UNFREE //p' | sort -u)
-        echo "Unfree (never pushed):"; echo "$names"
-        if [ -z "$names" ]; then
-          filter='^$'
-        else
-          alt=$(echo "$names" | sed 's/[][\.*^$+?(){}|]/\\&/g' | paste -sd'|')
-          filter="^/nix/store/[a-z0-9]{32}-($alt)(-[0-9][^/]*)?$"
-        fi
-        echo "UNFREE_FILTER=$filter" >> "$GITHUB_ENV"
-
-    # Installs cachix and adds our cache as a download source
-    - uses: cachix/cachix-action@v16
-      if: inputs.cachix-cache != ''
+    # Uploads go over the tailnet straight to vps-main: Cloudflare (in front
+    # of cache.zoe.dev.br) rejects request bodies over 100 MB
+    - uses: tailscale/github-action@v4
+      if: inputs.attic-token != '' && inputs.push == 'true'
       with:
-        name: ${{ inputs.cachix-cache }}
-        authToken: ${{ inputs.cachix-token }}
-        skipPush: true
+        oauth-client-id: ${{ inputs.ts-oauth-client-id }}
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: tag:ci
 
-    - name: Push packages to Cachix as soon as they're built
-      if: inputs.cachix-cache != '' && inputs.push == 'true'
+    - name: Push packages to Attic as soon as they appear
+      if: inputs.attic-token != '' && inputs.push == 'true'
       shell: bash
       env:
-        CACHE: ${{ inputs.cachix-cache }}
-        CACHIX_AUTH_TOKEN: ${{ inputs.cachix-token }}
+        ATTIC_TOKEN: ${{ inputs.attic-token }}
       run: |
-        nohup bash ci/push-built.sh /tmp/built-paths "$CACHE" "$UNFREE_FILTER" > /tmp/pusher.log 2>&1 &
-        echo $! > /tmp/pusher.pid
-        echo "CACHIX_PUSHING=1" >> "$GITHUB_ENV"
+        nix profile add nixpkgs#attic-client 2>/dev/null || nix profile install nixpkgs#attic-client
+        attic login zoe http://vps-main:8090 "$ATTIC_TOKEN"
+        # Paths signed by cache.nixos.org are skipped (cache upstream key)
+        nohup attic watch-store zoe:nixos > /tmp/attic-watch.log 2>&1 &
+        echo $! > /tmp/attic-watch.pid
+        echo "ATTIC_PUSHING=1" >> "$GITHUB_ENV"

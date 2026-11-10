@@ -6,10 +6,13 @@
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = true;
 
-  # Our own binary cache, filled by GitHub Actions (.github/workflows/build.yml).
-  # https://app.cachix.org/cache/zoeleu
-  nix.settings.substituters = [ "https://zoeleu.cachix.org" ];
-  nix.settings.trusted-public-keys = [ "zoeleu.cachix.org-1:Zfv7It/TC7pYCabCmPpFfztsKSbEs9dmZqwoBgsQPuQ=" ];
+  # Our private Attic cache on vps-main, filled by GitHub Actions
+  # (.github/workflows/build.yml). Downloads need the pull token in
+  # /etc/nix/netrc ("machine cache.zoe.dev.br\npassword <token>"); install-nixos
+  # writes it from the Bitwarden item "nixos: attic". It's not in this repo.
+  nix.settings.substituters = [ "https://cache.zoe.dev.br/nixos" ];
+  nix.settings.trusted-public-keys = [ "nixos:HGzkUV8gIl5rhGFchGKbfFwUzaMZlpSZaAGrEuPYruo=" ];
+  nix.settings.netrc-file = "/etc/nix/netrc";
 
   # --- Locale ---
   time.timeZone = "America/Sao_Paulo";

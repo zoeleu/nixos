@@ -19,8 +19,6 @@ hosts/deck/ccache.nix   # compiles Jovian's kernel + Mesa forks through ccache (
 hosts/<name>/disko.nix  # disk layout (partitions, LUKS, swap) for hosts installed by the ISO
 hosts/<name>/disk.nix   # which disk (by-id); written by the installer, like hardware-configuration.nix
 installer/              # installer ISO + `install-nixos` script (.github/workflows/iso.yml publishes it)
-ci/unfree-names.nix     # lists a host's unfree packages (kept out of the public cache)
-ci/push-built.sh        # pushes packages to Cachix as soon as they're built
 .github/workflows/build.yml   # prepare -> heavy (parallel) -> build -> weekly commit
 .github/actions/{setup,finish-push}/  # shared CI steps
 ```
@@ -64,9 +62,7 @@ export NIX_CONFIG="experimental-features = nix-command flakes"
 nix eval --json .#nixosConfigurations --apply builtins.attrNames          # hosts
 nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath   # must succeed for every host
 nix build --dry-run .#nixosConfigurations.<host>.config.system.build.toplevel      # what would compile
-HOST=<host> nix eval --impure --raw --file ci/unfree-names.nix 2>&1 >/dev/null | sed -n 's/^trace: UNFREE //p' | sort -u
 nix run nixpkgs#actionlint -- -ignore SC2016 .github/workflows/build.yml  # after editing CI
-nix run nixpkgs#shellcheck -- ci/push-built.sh
 ```
 
 Don't run `nixos-rebuild switch` on someone's machine as a way of testing;
@@ -77,16 +73,15 @@ evaluate instead, and leave applying to Zoe.
 - **No secrets in the repo.** It's public. Passwords, tokens, wifi
   passwords and private keys must never be committed. Public SSH keys are
   fine. If a secret is needed, ask first; the plan is sops-nix.
-- **Never upload anything non-redistributable to Cachix.** The cache
-  (`zoeleu.cachix.org`) is public. Keep the filtering in `ci/` and
-  `.github/actions/` intact. A path is never pushed if it:
-  - is unfree, or is a binary-only Jovian package without `meta.license`
-    (`-bin`, firmware, or binary `sourceProvenance`; see
-    `ci/unfree-names.nix`). Zoe's policy: anything built from public source
-    may be pushed even without a license field,
-  - has any of those in its closure (cachix pushes closures), or
-  - is a source / fixed-output path (`"ca":"fixed:..."`): sources have no
-    license info, e.g. Steam's download archive.
+- **The binary cache must stay private.** It's our own Attic server at
+  https://cache.zoe.dev.br/nixos (vps-main; see README) and it contains
+  unfree packages (Steam, claude-code, Chrome...), which is only fine because
+  nobody without a token can download them. Never make the `nixos` cache
+  public and never publish its tokens. Tokens live in Bitwarden
+  ("nixos: attic" = pull, "attic: ci token" = push, "attic: admin token");
+  machines read the pull token from `/etc/nix/netrc`, never from this repo.
+- Uploads to Attic go over Tailscale (`http://vps-main:8090`), not through
+  Cloudflare, which rejects request bodies over 100 MB.
 - **Don't run `nix flake update` locally.** CI updates `flake.lock` weekly
   and commits it only after every host built, so machines download instead
   of compiling. Change `flake.lock` only when adding or removing an input.
