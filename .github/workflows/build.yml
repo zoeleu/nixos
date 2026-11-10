@@ -98,7 +98,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build ${{ matrix.pkg }}
-        run: nix build --print-build-logs .#nixosConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
+        run: nix build --option log-lines 200 .#nixosConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
 
       - uses: ./.github/actions/finish-push
         if: always()
@@ -132,7 +132,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
 
       - name: Build ${{ matrix.host }}
-        run: nix build --print-build-logs .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
+        run: nix build --option log-lines 200 .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
 
       - uses: ./.github/actions/finish-push
         if: always()

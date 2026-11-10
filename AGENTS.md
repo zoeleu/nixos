@@ -64,11 +64,15 @@ evaluate instead, and leave applying to Zoe.
 - **No secrets in the repo.** It's public. Passwords, tokens, wifi
   passwords and private keys must never be committed. Public SSH keys are
   fine. If a secret is needed, ask first; the plan is sops-nix.
-- **Never upload unfree packages to Cachix.** The cache
-  (`zoeleu.cachix.org`) is public; Steam, claude-code etc. can't be
-  redistributed. Keep the unfree filtering in `ci/` and
-  `.github/actions/` intact: a package is skipped if anything in its
-  closure is unfree (cachix pushes closures).
+- **Never upload anything non-redistributable to Cachix.** The cache
+  (`zoeleu.cachix.org`) is public. Keep the filtering in `ci/` and
+  `.github/actions/` intact. A path is never pushed if it:
+  - is unfree, or is a Jovian package without `meta.license`
+    (`ci/unfree-names.nix`; only add to its `knownOpenSource` list after
+    checking the upstream repo's license),
+  - has any of those in its closure (cachix pushes closures), or
+  - is a source / fixed-output path (`"ca":"fixed:..."`): sources have no
+    license info, e.g. Steam's download archive.
 - **Don't run `nix flake update` locally.** CI updates `flake.lock` weekly
   and commits it only after every host built, so machines download instead
   of compiling. Change `flake.lock` only when adding or removing an input.

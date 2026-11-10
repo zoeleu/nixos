@@ -37,7 +37,13 @@ runs:
         else
           : > tainted
         fi
-        comm -23 built tainted > to-push
+        # sources (fixed-output paths) are never pushed, see ci/push-built.sh
+        : > sources
+        while read -r p; do
+          if nix path-info --json "$p" 2>/dev/null | grep -q '"ca":"fixed:'; then echo "$p" >> sources; fi
+        done < built
+        sort -u tainted sources > excluded
+        comm -23 built excluded > to-push
         n_built=$(wc -l < built); n_push=$(wc -l < to-push)
-        echo "Compiled: $n_built, skipped (unfree or depends on unfree): $((n_built - n_push)), pushing: $n_push"
+        echo "Compiled: $n_built, skipped (source, unfree or depends on unfree): $((n_built - n_push)), pushing: $n_push"
         if [ -s to-push ]; then xargs cachix push "$CACHE" < to-push; fi

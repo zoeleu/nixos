@@ -3,8 +3,12 @@
 # them to QUEUE, so finished packages are available (and kept) even if the
 # rest of the build is still running or later fails.
 #
-# A path is skipped if anything in its closure is unfree: cachix pushes a
-# path together with its dependencies, and the cache is public.
+# A path is skipped if:
+#   - it's a source (downloaded archive/checkout, a "fixed-output" path):
+#     sources carry no license info (e.g. Steam's download archive) and can
+#     always be fetched from upstream again, or
+#   - anything in its closure is unfree: cachix pushes a path together with
+#     its dependencies, and the cache is public.
 #
 # Stops when it reads a line "DONE".
 # Usage: push-built.sh QUEUE CACHE UNFREE_REGEX
@@ -17,6 +21,10 @@ tail -n +1 -F "$queue" 2>/dev/null | while read -r path; do
     /nix/store/*) ;;
     *) continue ;;
   esac
+  if nix path-info --json "$path" 2>/dev/null | grep -q '"ca":"fixed:'; then
+    echo "skip (source): $path"
+    continue
+  fi
   if nix path-info --recursive "$path" | grep -qE "$filter"; then
     echo "skip (unfree in closure): $path"
     continue
