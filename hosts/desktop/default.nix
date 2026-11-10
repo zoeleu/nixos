@@ -27,8 +27,6 @@ in
   # switch with: boot.kernelPackages = cachyos;  (replacing linuxPackages_latest)
   ci.heavyPackages = {
     cachyos-kernel = cachyos.kernel;
-    chatgpt = pkgs.chatgpt;
-    tectonic = pkgs.tectonic-unwrapped;
     claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
   };
 
@@ -172,7 +170,6 @@ in
   # --- Apps ---
   environment.systemPackages = with pkgs; [
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
-    chatgpt
     codex
     google-chrome
     bun

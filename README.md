@@ -189,8 +189,8 @@ the real desktop configuration instead.
    `modules/ci.nix`, plus per-host extras) builds in its own job, all on
    separate runners at the same time.
 2. Then each host's full system builds, downloading those from the cache.
-   Desktop also splits its CachyOS kernel, ChatGPT, tectonic and Claude
-   Desktop into heavy jobs. It uses the same cache upload, ccache workflow
+   Desktop also splits its CachyOS kernel and Claude Desktop into heavy
+   jobs. It uses the same cache upload, ccache workflow
    and failure handling as the Deck; no separate desktop-only app job.
 3. `built` advances only after the complete Deck and desktop matrix succeeds.
    The weekly lock-file commit also waits for both hosts.
