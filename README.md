@@ -23,16 +23,24 @@ agent and for signing git commits), Home Manager, claude-code.
 
 ## Usage
 
-The repo lives in `/etc/nixos` on each machine.
+**Machines update themselves.** Push to `main` → CI builds every host and
+fills the cache → CI moves the `built` branch → every machine picks it up
+within ~15 minutes (`modules/auto-upgrade.nix`). The desktop applies updates
+right away; the Deck at its next boot. A push that doesn't build never
+reaches a machine.
+
+Your working copy is `~/configuration`, cloned automatically at login
+(pushes go over SSH with Bitwarden's agent). Edit, commit, push; that's it.
 
 ```bash
-sudo nixos-rebuild switch --flake /etc/nixos        # apply (picks config by hostname)
-cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake .   # get CI's weekly update
+systemctl status nixos-upgrade                         # last auto-update
+sudo systemctl start nixos-upgrade                     # update now
+sudo nixos-rebuild switch --flake ~/configuration      # try uncommitted changes locally
 ```
 
 Don't run `nix flake update` locally: CI does it weekly and only commits the
-new `flake.lock` after every host built, so pulling it means downloading
-instead of compiling.
+new `flake.lock` after every host built, so updates download instead of
+compiling.
 
 ## Bitwarden SSH agent
 

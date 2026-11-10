@@ -79,6 +79,10 @@
   hardware.wirelessRegulatoryDatabase = true;
   networking.networkmanager.wifi.powersave = false;
 
+  # Auto-updates (modules/auto-upgrade.nix) apply at the next boot, so an
+  # update never restarts anything in the middle of a game
+  system.autoUpgrade.operation = "boot";
+
   # --- Local builds: 8 threads / 16 GB -> 2 builds x 4 threads avoids swapping ---
   nix.settings.max-jobs = 2;
   nix.settings.cores = 4;

@@ -6,6 +6,8 @@
 #   heavy    - one parallel job per slow package (ci.heavyPackages, see modules/ci.nix)
 #   build    - one job per host: the full system; slow packages come from Attic
 #   commit   - weekly: commit the new flake.lock if every host built
+#   publish  - move the `built` branch to what was built; machines auto-update
+#              from it (modules/auto-upgrade.nix)
 #
 # Every job joins the tailnet (tag:ci) and pushes each new store path to
 # Attic as soon as it appears (attic watch-store, over Tailscale to
@@ -170,14 +172,42 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: flake-lock
       - name: Commit flake.lock
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "flake.lock: update"
           git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # Machines auto-update from the `built` branch (modules/auto-upgrade.nix).
+  # Move it only once every host built, i.e. its packages are in the cache.
+  publish:
+    needs: [build, commit]
+    if: >-
+      always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      && needs.build.result == 'success'
+      && (needs.commit.result == 'success' || needs.commit.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Move `built` to the commit that was built
+        env:
+          # weekly update: the flake.lock commit (same contents as what was built)
+          SHA: ${{ needs.commit.outputs.sha || github.sha }}
+        run: |
+          git fetch --quiet origin "$SHA"
+          git push --force origin "$SHA:refs/heads/built"
+          echo "built -> $SHA: $(git log -1 --format='%h %s' "$SHA")"

@@ -54,4 +54,29 @@ in
     enable = true;
     interactiveShellInit = "set -g fish_greeting"; # no greeting
   };
+
+  # Working copy of this config at ~/configuration, cloned at login if it's
+  # missing (and retried at the next login if offline). Cloned over HTTPS
+  # (public, no key needed); pushes go over SSH through Bitwarden's agent.
+  # Machines don't build from it: they update from GitHub's `built` branch.
+  systemd.user.services.clone-configuration = {
+    Unit = {
+      Description = "Clone github.com/zoeleu/nixos to ~/configuration";
+      ConditionPathExists = "!%h/configuration";
+      Wants = [ "network-online.target" ];
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = toString (pkgs.writeShellScript "clone-configuration" ''
+        set -eu
+        tmp="$HOME/.configuration.cloning"
+        rm -rf "$tmp"
+        ${pkgs.git}/bin/git clone --quiet https://github.com/zoeleu/nixos.git "$tmp"
+        ${pkgs.git}/bin/git -C "$tmp" remote set-url --push origin git@github.com:zoeleu/nixos.git
+        mv "$tmp" "$HOME/configuration"
+      '');
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
 }

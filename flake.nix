@@ -47,6 +47,7 @@
           ./modules/common.nix
           ./modules/ci.nix
           ./modules/secrets.nix
+          ./modules/auto-upgrade.nix
           ./hosts/${name}
           { networking.hostName = lib.mkDefault name; }
         ];

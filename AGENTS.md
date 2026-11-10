@@ -13,6 +13,7 @@ flake.nix               # every directory in hosts/ becomes nixosConfigurations.
 modules/common.nix      # system settings shared by all hosts
 modules/ci.nix          # ci.heavyPackages option (slow packages CI builds in parallel)
 modules/secrets.nix     # sops-nix: secrets/*.yaml decrypted with each machine's SSH host key
+modules/auto-upgrade.nix # machines update from the `built` branch (moved by CI)
 secrets/                # encrypted secrets (sops); .sops.yaml = who can decrypt
 home/common.nix         # zoe's Home Manager config shared by all hosts
 hosts/<name>/default.nix               # per-machine config; hostname = <name>
@@ -92,6 +93,9 @@ evaluate instead, and leave applying to Zoe.
 - **Don't run `nix flake update` locally.** CI updates `flake.lock` weekly
   and commits it only after every host built, so machines download instead
   of compiling. Change `flake.lock` only when adding or removing an input.
+- **Every push to `main` deploys to all machines** once CI builds it
+  (`built` branch, `modules/auto-upgrade.nix`). Treat `main` as production:
+  evaluate every host before pushing. Never move `built` by hand.
 - **Never change `system.stateVersion` or `home.stateVersion`.** They
   record each machine's first install.
 - **Deck: never reset zoe's password as root** (`sudo passwd zoe`, or
