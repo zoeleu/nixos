@@ -4,6 +4,7 @@
 {
   imports = [
     ./hardware-configuration.nix
+    ./ccache.nix
     inputs.jovian.nixosModules.default
   ];
 

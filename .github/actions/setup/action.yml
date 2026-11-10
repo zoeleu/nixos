@@ -41,10 +41,14 @@ runs:
         printf '#!/bin/sh\necho "$OUT_PATHS" | tr " " "\\n" >> /tmp/built-paths\n' | sudo tee /etc/nix/record-built
         sudo chmod 755 /etc/nix/record-built
         sudo touch /tmp/built-paths; sudo chmod 666 /tmp/built-paths
+        # ccache folder for packages wrapped with ccache (see hosts/*/ccache.nix);
+        # the workflow restores/saves it with actions/cache
+        sudo mkdir -p /var/cache/ccache; sudo chmod a+rwx /var/cache/ccache
         {
           echo "extra-substituters = $subs"
           echo "extra-trusted-public-keys = $keys"
           echo "post-build-hook = /etc/nix/record-built"
+          echo "extra-sandbox-paths = /var/cache/ccache"
         } | sudo tee -a /etc/nix/nix.conf
         sudo systemctl restart nix-daemon
 
