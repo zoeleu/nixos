@@ -34,6 +34,9 @@
           content = {
             type = "luks";
             name = "cryptroot";
+            # only read when formatting: install-nixos puts the passphrase
+            # here (from Vaultwarden or typed), in RAM, and deletes it after
+            passwordFile = "/tmp/disk.key";
             settings.allowDiscards = true; # TRIM on the SSD
             content = {
               type = "filesystem";

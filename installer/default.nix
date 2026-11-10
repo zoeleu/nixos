@@ -17,6 +17,8 @@ let
       gnugrep
       gawk
       gnused
+      bitwarden-cli # Vaultwarden passwords
+      jq
     ];
     # the repo as of this ISO build, if GitHub can't be reached
     runtimeEnv.ISO_REPO = "${inputs.self}";
@@ -36,7 +38,7 @@ in
   services.getty.helpLine = lib.mkAfter ''
 
     To install a machine from github.com/zoeleu/nixos, run:  install-nixos
-    (wifi first: nmtui)
+    (Ethernet connects automatically; wifi: nmtui)
   '';
 
   image.baseName = lib.mkForce "nixos-zoe-installer";
