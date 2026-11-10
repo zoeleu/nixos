@@ -123,7 +123,8 @@ the repaired command with its declared tools (do not run the ISO's old
 sudo nix run /mnt/etc/nixos#install-nixos -- --resume desktop
 ```
 
-ChatGPT stays installed. `overlays/tectonic.nix` adds the system AWS-LC
+ChatGPT is temporarily omitted from the desktop to unblock installation.
+`overlays/tectonic.nix` still adds the system AWS-LC
 library required by the pinned Rust Cargo hook; OpenSSL alone cannot
 satisfy it. `nix build .#tectonic .#chatgpt` tests these packages even before
 the desktop's generated hardware files are available. The lock file is
