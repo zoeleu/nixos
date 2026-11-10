@@ -20,6 +20,17 @@
   # Compressed swap in RAM, used before the 32 GB swap partition
   zramSwap.enable = true;
 
+  # BFQ I/O scheduler on every disk (SATA SSD/HDD, NVMe, SD): keeps the
+  # desktop responsive while something else hammers the disk (game installs,
+  # nix builds), at a small throughput cost on fast NVMe. It's a module in
+  # the kernel config (CONFIG_IOSCHED_BFQ=m), so load it before udev applies
+  # the rule. LUKS/dm devices have no scheduler of their own; the disk under
+  # them gets BFQ.
+  boot.kernelModules = [ "bfq" ];
+  services.udev.extraRules = ''
+    ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*|nvme[0-9]*n[0-9]*|mmcblk[0-9]*", ATTR{queue/scheduler}="bfq"
+  '';
+
   # --- Bluetooth (Plasma's Bluetooth settings; audio goes through PipeWire,
   # enabled for all machines in modules/common.nix) ---
   hardware.bluetooth = {
