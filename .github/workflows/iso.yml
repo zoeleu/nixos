@@ -1,0 +1,66 @@
+# Builds the installer ISO (installer/) and publishes it as the GitHub
+# release "installer" (replacing the previous ISO).
+#
+# Download: https://github.com/zoeleu/nixos/releases/tag/installer
+# Boot it, then run `install-nixos` (see installer/install-nixos.sh).
+#
+# The ISO clones the latest config from GitHub at install time, so it only
+# needs rebuilding when installer/ changes (or for a newer kernel on it).
+name: Installer ISO
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "installer/**"
+      - ".github/workflows/iso.yml"
+
+permissions:
+  contents: write # publish the release
+
+concurrency:
+  group: iso
+  cancel-in-progress: true
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
+          df -h /
+
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+
+      - name: Build ISO
+        run: |
+          nix build --option log-lines 200 .#installer-iso
+          iso=$(find -L result/iso -name '*.iso' | head -1)
+          cp "$iso" nixos-zoe-installer.iso
+          sha256sum nixos-zoe-installer.iso > nixos-zoe-installer.iso.sha256
+          ls -lh nixos-zoe-installer.iso
+          size=$(stat -c %s nixos-zoe-installer.iso)
+          # GitHub release files must be under 2 GiB
+          [ "$size" -lt 2147483648 ] || { echo "ISO is over 2 GiB"; exit 1; }
+
+      - name: Publish release "installer"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Installer ISO built from ${GITHUB_SHA::7}.
+
+          1. Write it to a USB stick (e.g. \`sudo dd if=nixos-zoe-installer.iso of=/dev/sdX bs=4M status=progress\`, or Ventoy).
+          2. Boot it, connect to the internet (wifi: \`nmtui\`).
+          3. Run \`install-nixos\` and follow the prompts.
+
+          It installs the latest config from main, not this commit's."
+          if gh release view installer >/dev/null 2>&1; then
+            gh release edit installer --notes "$notes" --target "$GITHUB_SHA"
+          else
+            gh release create installer --title "Installer ISO" --notes "$notes" --target "$GITHUB_SHA" --latest=false
+          fi
+          gh release upload installer nixos-zoe-installer.iso nixos-zoe-installer.iso.sha256 --clobber

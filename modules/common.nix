@@ -91,6 +91,13 @@
     VISUAL = "nano";
   };
 
+  # /etc/nixos may be owned by zoe (the installer does that); let root's git
+  # (nixos-rebuild) read it anyway
+  programs.git = {
+    enable = true;
+    config.safe.directory = "/etc/nixos";
+  };
+
   programs.firefox.enable = true;
   programs.nix-ld.enable = true; # run downloaded (non-Nix) Linux binaries
 

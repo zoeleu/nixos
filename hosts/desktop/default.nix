@@ -2,16 +2,31 @@
 # NixOS on its own drive (Windows on another); LUKS full-disk encryption
 # unlocked by passphrase at boot, then automatic login into zoe.
 #
-# This host only becomes a nixosConfiguration once hardware-configuration.nix
-# exists (generated on the real machine during install, see README).
+# Installed with the installer ISO (`install-nixos`, see installer/), which
+# partitions the disk per ./disko.nix and writes ./hardware-configuration.nix
+# and ./disk.nix. Until those exist the flake skips this host.
 { config, lib, pkgs, inputs, ... }:
 
 {
   imports = [
-    ./hardware-configuration.nix
+    ./hardware-configuration.nix # generated with --no-filesystems: disko owns the disks
+    ./disko.nix
+    ./disk.nix                   # which disk; written by the installer
     ./kde-apps.nix
+    inputs.disko.nixosModules.disko
     inputs.claude-desktop.nixosModules.default
   ];
+
+  # Compressed swap in RAM, used before the 32 GB swap partition
+  zramSwap.enable = true;
+
+  # --- Bluetooth (Plasma's Bluetooth settings; audio goes through PipeWire,
+  # enabled for all machines in modules/common.nix) ---
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+    settings.General.Experimental = true; # show headset/controller battery levels
+  };
 
   # --- Boot ---
   boot.loader.systemd-boot.enable = true;

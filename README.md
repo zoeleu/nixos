@@ -15,7 +15,7 @@ ci/                  # helpers for GitHub Actions
 | Host | Machine |
 |---|---|
 | `deck` | Steam Deck (LCD) with [Jovian NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS) |
-| `desktop` | AMD RX 9060 XT PC, Plasma, Incus for AI-agent VMs (config ready, not installed yet) |
+| `desktop` | AMD RX 9060 XT PC, Plasma, Incus for AI-agent VMs; installs from the installer ISO (not installed yet) |
 
 Shared everywhere: fish, pt_BR formats, Tailscale, Bitwarden (also as SSH
 agent and for signing git commits), Home Manager, claude-code.
@@ -42,7 +42,27 @@ In Bitwarden: Settings > Enable SSH agent, and store the SSH keys in the
 vault. Bitwarden starts at login; `ssh`, `git` and commit signing use its
 socket (`~/.bitwarden-ssh-agent.sock`).
 
-## Adding a machine
+## Installing a machine (installer ISO)
+
+Hosts with a `disko.nix` (disk layout) install from the installer ISO,
+published by `.github/workflows/iso.yml` at
+https://github.com/zoeleu/nixos/releases/tag/installer:
+
+1. Write the ISO to a USB stick (or put it on Ventoy) and boot it.
+2. Connect to the internet (wifi: `nmtui`).
+3. Run `install-nixos`: pick the host and the disk to **erase**, type the
+   disk encryption passphrase, wait, then set zoe's password.
+4. After the first boot, sign in to Bitwarden and enable its SSH agent, then
+   as zoe: `cd /etc/nixos && git commit -m "<host>:
+   hardware config" && git push` (the installer generated
+   `hardware-configuration.nix` and `disk.nix` for the host, and made
+   `/etc/nixos` zoe's, pushing over SSH).
+
+The ISO clones the latest config from GitHub, so it only needs rebuilding
+when `installer/` changes. Claude Code isn't on it (public download,
+unfree); if needed there: `NIXPKGS_ALLOW_UNFREE=1 nix run --impure nixpkgs#claude-code`.
+
+## Adding a machine without the ISO
 
 A folder in `hosts/` only becomes a machine once it has a
 `hardware-configuration.nix` (generated on the real machine), so a host can

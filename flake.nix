@@ -14,6 +14,11 @@
     # Claude Desktop for Linux (repackaged official build). Not following our
     # nixpkgs on purpose: it pins the Electron version the app was built for.
     claude-desktop.url = "github:patrickjaja/claude-desktop-extra";
+    # Declarative disk partitioning, used by the installer ISO
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # Every folder in ./hosts with a hardware-configuration.nix becomes a
@@ -42,5 +47,14 @@
     in
     {
       nixosConfigurations = lib.genAttrs hosts mkHost;
+
+      # Installer ISO (installer/): nix build .#installer-iso
+      packages.x86_64-linux.installer-iso = (lib.nixosSystem {
+        specialArgs = { inherit inputs; };
+        modules = [
+          ./installer
+          { nixpkgs.hostPlatform = "x86_64-linux"; }
+        ];
+      }).config.system.build.isoImage;
     };
 }
