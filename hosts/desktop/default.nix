@@ -21,6 +21,16 @@ let
       _processor_opt = "GENERIC_V3";
     };
   };
+
+  # OpenAI Codex CLI. nixpkgs' cargo setup hook now forces system libraries
+  # instead of vendored ones (AWS_LC_SYS_USE_SYSTEM, ZSTD_SYS_USE_PKG_CONFIG,
+  # LIBSQLITE3_SYS_USE_PKG_CONFIG, LIBZ_SYS_STATIC=0, RUSTONIG_SYSTEM_LIBONIG),
+  # but nixpkgs' codex package doesn't provide them, so its -sys crates fail
+  # to build. Shared by the CLI, T3 Code and ChatGPT below. Drop the override
+  # once nixpkgs fixes it.
+  codex = pkgs.codex.overrideAttrs (old: {
+    buildInputs = old.buildInputs ++ (with pkgs; [ aws-lc zstd sqlite zlib dbus oniguruma ]);
+  });
 in
 {
   # Not booted yet: CI builds it first (it's not in any binary cache), then
@@ -28,6 +38,7 @@ in
   ci.heavyPackages = {
     cachyos-kernel = cachyos.kernel;
     claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    inherit codex; # overridden below, so never in cache.nixos.org
   };
 
   imports = [
@@ -197,6 +208,12 @@ in
   environment.systemPackages = with pkgs; [
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
     google-chrome
+    codex
+    # ChatGPT desktop app (OpenAI's Linux build; includes the Codex app),
+    # using the codex above instead of its bundled copy
+    (chatgpt.override { inherit codex; })
+    # T3 Code (GUI for coding agents) driving Claude Code and Codex
+    (t3code.override { enableClaude = true; inherit codex; })
     bun
     nodejs_26 # current LTS
     python3
