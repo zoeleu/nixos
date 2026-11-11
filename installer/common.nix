@@ -180,6 +180,7 @@ in
       text = ''exec install-nixos --resume "$@"'';
     })
     gui
+    (import ./nvme-4k.nix { inherit pkgs; }) # NVMe to 4K sectors, keeping the data
     browser
     browserDesktop
     claude

@@ -92,6 +92,7 @@
       in {
         touch-unlock = test ./tests/touch-unlock.nix;   # Deck: touch keyboard, then splash
         installer-gui = test ./tests/installer-gui.nix; # installer kiosk + GUI
+        nvme-4k = test ./tests/nvme-4k.nix;             # NVMe 512 -> 4K with backup/restore
       };
 
       # Installer images (installer/), the same installer two ways:
@@ -116,6 +117,7 @@
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
           inherit inputs;
         };
+        nvme-4k = import ./installer/nvme-4k.nix { pkgs = nixpkgs.legacyPackages.x86_64-linux; };
         installer-iso = (installer ./installer/iso.nix).config.system.build.isoImage;
         installer-netboot = nixpkgs.legacyPackages.x86_64-linux.symlinkJoin {
           name = "nixos-zoe-installer-netboot";

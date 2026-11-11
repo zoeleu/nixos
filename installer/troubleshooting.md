@@ -18,6 +18,18 @@ wrapper, the script's path is in its last line) runs seven steps:
 6. Install NixOS (`nixos-install --flake /mnt/etc/nixos#<host>`)
 7. Finish up (zoe's password, ownership of `/etc/nixos`)
 
+## nvme-4k (moving an NVMe to 4K sectors)
+
+`nvme-4k <nvme-disk> <backup-disk>` is a separate tool on this image: it
+backs up every partition of an installed NVMe to another disk, reformats the
+NVMe to 4096-byte sectors and restores everything (same GPT GUIDs, LUKS UUID,
+4K LUKS sectors). Its progress lives on the backup disk (label
+`NVME4K-BACKUP`, files under `nvme-4k/`, log in `nvme-4k/log`); running the
+same command again continues an interrupted run. Only Zoe runs it. If it
+stopped, read the log and tell her to run the same command again; never
+delete or reformat the backup disk, which may hold the only copy of her
+system.
+
 ## Where to look
 
 - `/tmp/install-nixos.log`: everything the installer printed, with step markers
