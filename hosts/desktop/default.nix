@@ -119,9 +119,13 @@ in
   # zoe is in "incus" (not "incus-admin"): her own restricted Incus project,
   # can create/delete containers and VMs but not touch the host. Safe to let
   # agents running as zoe drive it. VMs balloon: free guest memory goes back
-  # to the host.
+  # to the host (free page reporting, which Incus turns on for every VM
+  # since 7.6; the 7.0 LTS doesn't have it).
   virtualisation.incus = {
     enable = true;
+    # Feature releases, not the module's default incus-lts. One-way: the
+    # database only migrates forward, so going back to 7.0 LTS isn't supported.
+    package = pkgs.incus;
     preseed = {
       networks = [{
         name = "incusbr0";
