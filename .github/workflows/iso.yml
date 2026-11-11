@@ -43,12 +43,26 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost
           df -h /
 
+      - name: Add build swap
+        run: |
+          sudo fallocate -l 16G /swapfile-iso
+          sudo chmod 600 /swapfile-iso
+          sudo mkswap /swapfile-iso
+          sudo swapon /swapfile-iso
+          nproc
+          free -h
+
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+        with:
+          # Codex and OpenCode build from source; keep their memory use bounded.
+          extra_nix_config: |
+            max-jobs = 1
+            cores = 4
 
       - name: Build ISO
         run: |
-          nix build --option log-lines 200 .#installer-iso
+          nix build -L --option log-lines 200 .#installer-iso
           iso=$(find -L result/iso -name '*.iso' | head -1)
           mkdir upload
           cp "$iso" upload/nixos-zoe-installer.iso
@@ -57,7 +71,7 @@ jobs:
 
       - name: Build network-boot image
         run: |
-          nix build --option log-lines 200 -o result-netboot .#installer-netboot
+          nix build -L --option log-lines 200 -o result-netboot .#installer-netboot
           mkdir upload/netboot
           cp -L result-netboot/bzImage result-netboot/initrd result-netboot/netboot.ipxe upload/netboot/
           (cd upload/netboot && sha256sum bzImage initrd netboot.ipxe > SHA256SUMS)
