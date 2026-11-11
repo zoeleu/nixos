@@ -149,7 +149,10 @@ in
     };
   };
   networking.nftables.enable = true; # required by Incus
-  networking.firewall.trustedInterfaces = [ "incusbr0" ];
+  # incusbr0 is the preseed bridge; zoe's restricted project doesn't use it
+  # but gets its own, incusbr-<uid>, from incus-user. Its VMs need DHCP and
+  # DNS from the host, which the firewall drops unless the bridge is trusted.
+  networking.firewall.trustedInterfaces = [ "incusbr0" "incusbr-1000" ];
 
   # --- Containers: rootless Podman with a Docker-compatible CLI ---
   virtualisation.podman = {
