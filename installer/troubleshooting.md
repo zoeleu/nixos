@@ -36,6 +36,7 @@ system.
 - `/mnt`: the target system once step 4 ran; `/mnt/etc/nixos` is its config
 - `journalctl -b`, `dmesg`, `lsblk -f`, `findmnt -R /mnt`, `nmcli`
 - `journalctl -u installer-extras`: download of Widevine and Claude Code
+  (Codex and OpenCode are on the image: `installer-agent codex|opencode`)
 
 ## Rules
 

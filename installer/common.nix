@@ -7,7 +7,8 @@
 # Both images are public downloads: free software only. The two unfree things
 # the installer offers (Widevine for Chromium, i.e. Spotify; Claude Code for
 # troubleshooting) are not on the image: installer-extras.service downloads
-# them from their vendors once there is a network.
+# them from their vendors once there is a network. Codex and OpenCode, the
+# other two assistants, are free software and are on the image.
 { config, lib, pkgs, modulesPath, inputs, ... }:
 
 let
@@ -52,25 +53,52 @@ let
     mimeTypes = [ "x-scheme-handler/http" "x-scheme-handler/https" "text/html" ];
   };
 
-  # Claude Code in ~/install-help, where troubleshooting.md is its CLAUDE.md
-  claude = pkgs.writeShellApplication {
-    name = "installer-claude";
+  # The coding assistants, opened in ~/install-help where troubleshooting.md
+  # is their instructions file (CLAUDE.md for Claude Code, AGENTS.md for
+  # Codex and OpenCode):  installer-agent claude|codex|opencode [prompt]
+  agent = pkgs.writeShellApplication {
+    name = "installer-agent";
     text = ''
-      claude=${extras}/claude/bin/claude
-      if [ ! -x "$claude" ]; then
-        echo "Claude Code isn't on the installer image; downloading it (needs internet)..."
-        sudo systemctl start installer-extras.service || true # waits for the download
-      fi
-      if [ ! -x "$claude" ]; then
-        echo "The download failed. Check the network, then: journalctl -u installer-extras"
-        read -rp "Press Enter to close. " _
-        exit 1
-      fi
+      which=''${1:-claude}
+      [ $# -eq 0 ] || shift
       mkdir -p "$HOME/install-help"
       cd "$HOME/install-help"
       install -m 644 ${./troubleshooting.md} CLAUDE.md
-      exec "$claude" "$@"
+      install -m 644 ${./troubleshooting.md} AGENTS.md
+      case $which in
+        claude)
+          claude=${extras}/claude/bin/claude
+          if [ ! -x "$claude" ]; then
+            echo "Claude Code isn't on the installer image; downloading it (needs internet)..."
+            sudo systemctl start installer-extras.service || true # waits for the download
+          fi
+          if [ ! -x "$claude" ]; then
+            echo "The download failed. Check the network, then: journalctl -u installer-extras"
+            echo "Codex and OpenCode are on the image: installer-agent codex | opencode"
+            read -rp "Press Enter to close. " _
+            exit 1
+          fi
+          exec "$claude" "$@"
+          ;;
+        codex)
+          exec ${pkgs.codex}/bin/codex "$@"
+          ;;
+        opencode)
+          # its prompt is a flag, not an argument
+          if [ $# -gt 0 ]; then exec ${pkgs.opencode}/bin/opencode --prompt "$1"; fi
+          exec ${pkgs.opencode}/bin/opencode
+          ;;
+        *)
+          echo "usage: installer-agent claude|codex|opencode [prompt]" >&2
+          exit 2
+          ;;
+      esac
     '';
+  };
+  claude = pkgs.writeShellApplication {
+    name = "installer-claude";
+    runtimeInputs = [ agent ];
+    text = ''exec installer-agent claude "$@"'';
   };
 
   swayConfig = pkgs.writeText "installer-sway.conf" ''
@@ -108,6 +136,7 @@ in
 {
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = false; # public download: free software only
+  nixpkgs.overlays = [ (import ../overlays/codex.nix) ]; # nixpkgs' codex doesn't build without it
   networking.networkmanager.enable = true;
 
   # --- Kiosk session: greetd logs the live user straight into sway ---
@@ -183,7 +212,10 @@ in
     (import ./nvme-4k.nix { inherit pkgs; }) # NVMe to 4K sectors, keeping the data
     browser
     browserDesktop
+    agent
     claude
+    pkgs.codex    # free software, so on the image (see the top of this file)
+    pkgs.opencode
     pkgs.chromium
     pkgs.cage # SSO login from the console installer
     pkgs.git

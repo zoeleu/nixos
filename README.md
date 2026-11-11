@@ -143,10 +143,11 @@ https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
 While it installs, the header bar has Chromium, Spotify, YouTube, a
 terminal, Bluetooth, sound and network. The image is free software only, so
 two things download after boot (the header says when they're ready):
-Widevine (needed by Spotify) and Claude Code. **Ask Claude** opens Claude
-Code with the installer's log; sign in with Google in the Chromium tab that
-opens (a passkey on your phone works over Bluetooth). If a step fails, the
-window offers **Troubleshoot with Claude** and **Resume**.
+Widevine (needed by Spotify) and Claude Code. **Ask AI** opens Claude Code,
+Codex or OpenCode (those two are free software, so they're on the image)
+with the installer's log; sign in in the Chromium tab that opens (a passkey
+on your phone works over Bluetooth). If a step fails, the window offers
+**Troubleshoot with Claude**, **Other AI** and **Resume**.
 
 Without the GUI (Ctrl+Alt+F2): `install-nixos` on the console, as before.
 

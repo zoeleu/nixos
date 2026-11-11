@@ -8,7 +8,7 @@ script reports its steps and asks its questions through lines starting with
 
 Pages: network -> choose (automatic / resume / manual) -> progress -> done or
 failed. The header bar starts the things to do meanwhile (browser, music,
-Bluetooth, sound, terminal, Claude), each as its own tab in the kiosk (sway).
+Bluetooth, sound, terminal, AI assistants), each as its own tab in the kiosk (sway).
 
 For tests/installer-gui.nix: INSTALLER_FAKE_ENGINE=<program> runs that instead
 of `sudo install-nixos`; INSTALLER_TEST=1 skips the internet check and
@@ -29,6 +29,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 REPO = os.environ.get("ISO_REPO", "/etc/nixos")  # hosts/ as of the image build
 LOG = "/tmp/install-nixos.log"
+AGENTS = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}  # installer-agent <name>
 EXTRAS = "/run/installer-extras"  # Chromium with Widevine + Claude Code, fetched after boot
 ENGINE_STEPS = [
     "Fetch the configuration",
@@ -257,9 +258,16 @@ class Installer(Adw.ApplicationWindow):
                             lambda: spawn("installer-browser", "https://open.spotify.com"))
         button("video-x-generic-symbolic", "YouTube", lambda: spawn("installer-browser", "https://www.youtube.com"))
         button("utilities-terminal-symbolic", "Terminal", lambda: spawn("foot"))
-        claude = Gtk.Button(label="Ask Claude", tooltip_text="Claude Code, with the installer's log")
-        claude.connect("clicked", lambda *_: self.ask_claude())
-        bar.pack_start(claude)
+        ask = Gtk.MenuButton(label="Ask AI", tooltip_text="A coding assistant, with the installer's log")
+        agents = Gio.Menu()
+        for name, label in AGENTS.items():
+            agents.append(label, f"win.ask-{name}")
+            for prefix, failed in (("ask", False), ("troubleshoot", True)):
+                action = Gio.SimpleAction.new(f"{prefix}-{name}", None)
+                action.connect("activate", lambda *_, name=name, failed=failed: self.ask_agent(name, failed))
+                self.add_action(action)
+        ask.set_menu_model(agents)
+        bar.pack_start(ask)
         bar.pack_start(self.extras_label)
 
         power = Gtk.MenuButton(icon_name="system-shutdown-symbolic", tooltip_text="Power")
@@ -638,8 +646,16 @@ class Installer(Adw.ApplicationWindow):
             self.set_steps(self.current_step + 1, failed=True, skipped=self.skipped)
             buttons = Gtk.Box(spacing=12, halign=Gtk.Align.CENTER)
             claude = Gtk.Button(label="Troubleshoot with Claude", css_classes=["suggested-action", "pill"])
-            claude.connect("clicked", lambda *_: self.ask_claude(failed=True))
+            claude.connect("clicked", lambda *_: self.ask_agent("claude", failed=True))
             buttons.append(claude)
+            others = Gtk.MenuButton(label="Other AI", css_classes=["pill"],
+                                    tooltip_text="Troubleshoot with Codex or OpenCode")
+            menu = Gio.Menu()
+            for name, label in AGENTS.items():
+                if name != "claude":
+                    menu.append(label, f"win.troubleshoot-{name}")
+            others.set_menu_model(menu)
+            buttons.append(others)
             if mounted_host() is not None:
                 resume = Gtk.Button(label="Resume", css_classes=["pill"], tooltip_text="Continue without erasing")
                 resume.connect("clicked", lambda *_: self.start(["--resume", self.host], self.host, resuming=True))
@@ -657,11 +673,11 @@ class Installer(Adw.ApplicationWindow):
         self.show("end", page)
 
     # --- helpers around the installation ---
-    def ask_claude(self, failed=False):
+    def ask_agent(self, name, failed=False):
         prompt = ("The installation of '%s' stopped at step %d (%s). %s Read %s and help me fix it." % (
             self.host, self.current_step, ENGINE_STEPS[self.current_step - 1] if self.current_step else "start",
             self.last_error, LOG)) if failed else ""
-        spawn("foot", "--title", "Claude", "installer-claude", *([prompt] if prompt else []))
+        spawn("foot", "--title", AGENTS[name], "installer-agent", name, *([prompt] if prompt else []))
 
     def refresh_extras(self):
         """Header hint while Widevine and Claude Code are still downloading."""

@@ -166,8 +166,9 @@ evaluate instead, and leave applying to Zoe.
   protocol (documented at the top of the script). New questions go in the
   script through `ask_line` / `ask_hidden` / `ask_secret` so both the
   console and the GUI get them.
-- `installer/troubleshooting.md` becomes Claude Code's CLAUDE.md on the live
-  installer; keep its "never format" rules in sync with the resume logic.
+- `installer/troubleshooting.md` becomes the assistants' instructions on the
+  live installer (CLAUDE.md for Claude Code, AGENTS.md for Codex and
+  OpenCode, which are free software and on the image); keep its "never format" rules in sync with the resume logic.
 - Test `install-nixos.sh` changes by building the ISO
   (`nix build .#installer-iso`; this also runs ShellCheck on the script) and
   GUI changes with the `installer-gui` VM test.
