@@ -13,13 +13,20 @@ let
   # x86-64-v3, the highest level the i7-8086K (Coffee Lake: AVX2, no
   # AVX-512) supports. This kernel has no CPU-specific -march options, and
   # NATIVE would target the CI runner's CPU, not this one.
+  # AutoFDO (CONFIG_AUTOFDO_CLANG) is on so profiles recorded here line up
+  # with the code (./kernel-afdo.nix records them); once ./kernel.afdo is
+  # committed, the kernel is optimized with it. Changing that file rebuilds
+  # the whole kernel in CI.
   cachyos = let
     lto = inputs.chaotic.legacyPackages.x86_64-linux.linuxPackages_cachyos-lto;
   in lto.cachyOverride {
     cachyVars = lto.kernel.cachyConfig.cachyVars // {
       _cpusched = "bore";
       _processor_opt = "GENERIC_V3";
+      _autofdo = "yes";
     };
+    extraMakeFlags = lib.optional (builtins.pathExists ./kernel.afdo)
+      "CLANG_AUTOFDO_PROFILE=${./kernel.afdo}";
   };
 in
 {
@@ -32,6 +39,7 @@ in
 
   imports = [
     ./kde-apps.nix
+    ./kernel-afdo.nix # records kernel AutoFDO profiles (GameMode starts it)
     inputs.claude-desktop.nixosModules.default
   ] ++ lib.optionals (!ciBuild) [
     ./hardware-configuration.nix # generated with --no-filesystems: disko owns the disks
