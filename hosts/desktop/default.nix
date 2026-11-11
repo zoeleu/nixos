@@ -212,6 +212,7 @@ in
     usbutils # lsusb
     libnfc   # NFC tools; reader set up above
     jq
+    gh # GitHub CLI (PRs, issues, CI runs)
   ];
 
   home-manager.users.zoe = {
