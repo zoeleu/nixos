@@ -178,13 +178,11 @@ sudo nix run /mnt/etc/nixos#install-nixos -- --resume desktop
 The pinned Rust Cargo hook makes `-sys` crates link system libraries instead
 of vendored ones, and some nixpkgs packages don't provide them yet.
 `overlays/tectonic.nix` adds the system AWS-LC library to tectonic (ChatGPT's
-TeX engine); OpenSSL alone cannot satisfy it. The desktop's `codex` override
-(`hosts/desktop/default.nix`) adds AWS-LC, zstd, SQLite, oniguruma, zlib and
-dbus to Codex, which the desktop's ChatGPT and T3 Code also use.
-`nix build .#tectonic` tests tectonic even before the desktop's generated
-hardware files are available. `.#chatgpt` doesn't have the codex override
-yet, so it still fails; build `.#ciConfigurations.desktop.config.ci.heavyPackages.codex`
-to test Codex instead. The lock file is unchanged.
+TeX engine); OpenSSL alone cannot satisfy it. `overlays/codex.nix` adds
+AWS-LC, zstd, SQLite, oniguruma, zlib and dbus to Codex, which ChatGPT and
+T3 Code also use. `nix build .#tectonic .#chatgpt` tests these packages (and
+Codex) even before the desktop's generated hardware files are available. The
+lock file is unchanged.
 
 ### Network boot (PXE) instead of a USB stick
 

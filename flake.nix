@@ -100,7 +100,7 @@
         desktopPkgs = import nixpkgs {
           system = "x86_64-linux";
           config.allowUnfree = true;
-          overlays = [ (import ./overlays/tectonic.nix) ];
+          overlays = [ (import ./overlays/tectonic.nix) (import ./overlays/codex.nix) ];
         };
         installer = module: lib.nixosSystem {
           specialArgs = { inherit inputs; };
