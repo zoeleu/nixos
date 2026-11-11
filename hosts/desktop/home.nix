@@ -22,6 +22,10 @@ in
     package = pkgs.vscode; # Microsoft's build
   };
 
+  # Tailscale's own tray icon (connect/disconnect, exit nodes); it can only
+  # change settings because zoe is the operator (hosts/desktop/default.nix)
+  services.tailscale-systray.enable = true;
+
   home.packages = with pkgs; [
     (discord.override { withVencord = true; })
     spotify

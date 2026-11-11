@@ -201,6 +201,10 @@ in
 
   users.users.zoe.extraGroups = [ "incus" ];
 
+  # Lets zoe drive tailscaled without sudo, so the tray icon
+  # (services.tailscale-systray in ./home.nix) can connect/disconnect
+  services.tailscale.extraSetFlags = [ "--operator=zoe" ];
+
   # --- Apps ---
   environment.systemPackages = with pkgs; [
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
