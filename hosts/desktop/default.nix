@@ -40,6 +40,7 @@ in
   imports = [
     ./kde-apps.nix
     ./kernel-afdo.nix # records kernel AutoFDO profiles (GameMode starts it)
+    ./priorities.nix  # desktop > apps/games > services, builds, VMs
     inputs.claude-desktop.nixosModules.default
   ] ++ lib.optionals (!ciBuild) [
     ./hardware-configuration.nix # generated with --no-filesystems: disko owns the disks
@@ -157,22 +158,7 @@ in
       }];
     };
   };
-  # VMs yield to the desktop. Incus's limits.cpu.priority and
-  # limits.disk.priority only apply to containers; a VM's QEMU runs in
-  # incus.service's cgroup. Weights only compete between siblings, so
-  # incusd and its VMs get their own top-level slice next to system.slice
-  # and user.slice: under contention they get 20/(20+100+100) of CPU and
-  # disk, and all of it when the machine is idle. IO weights work because
-  # every disk uses BFQ. No dash in the name: systemd nests foo-bar.slice
-  # inside foo.slice, where the weight would have no siblings to beat.
-  systemd.slices.vms = {
-    description = "Incus VMs, below the desktop";
-    sliceConfig = {
-      CPUWeight = 20; # default 100
-      IOWeight = 20;  # default 100
-    };
-  };
-  systemd.services.incus.serviceConfig.Slice = "vms.slice";
+  # Incus and its VMs run in vms.slice, below the desktop: ./priorities.nix
   networking.nftables.enable = true; # required by Incus
   # incusbr0 is the preseed bridge; zoe's restricted project doesn't use it
   # but gets its own, incusbr-<uid>, from incus-user. Its VMs need DHCP and
