@@ -221,6 +221,7 @@ in
     mangohud
     usbutils # lsusb
     libnfc   # NFC tools; reader set up above
+    jq
   ];
 
   home-manager.users.zoe = {
