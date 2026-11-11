@@ -26,7 +26,9 @@
           size = "32G";
           content = {
             type = "swap";
-            randomEncryption = true;
+            # 4K crypto sectors: one cipher call per page instead of eight.
+            # New random key every boot, so this applies at the next reboot.
+            randomEncryption.sectorSize = 4096;
           };
         };
         root = {
@@ -37,6 +39,11 @@
             # only read when formatting: install-nixos puts the passphrase
             # here (from Vaultwarden or typed), in RAM, and deletes it after
             passwordFile = "/tmp/disk.key";
+            # 4K crypto sectors, matching ext4's 4K blocks (one cipher call per
+            # block instead of eight). Only read when formatting: the current
+            # install keeps 512 until moved with `nvme-4k` from the installer
+            # (installer/nvme-4k.sh: backup, NVMe to 4K, restore).
+            extraFormatArgs = [ "--sector-size" "4096" ];
             settings = {
               allowDiscards = true; # TRIM on the SSD
               # Encrypt/decrypt in the context that issued the IO instead of
