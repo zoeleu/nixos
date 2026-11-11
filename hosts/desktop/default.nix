@@ -210,6 +210,7 @@ in
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
     google-chrome
     codex
+    opencode # open-source terminal coding agent
     # ChatGPT desktop app (OpenAI's Linux build; includes the Codex app),
     # using the codex above (overlays/codex.nix) instead of its bundled copy
     chatgpt
