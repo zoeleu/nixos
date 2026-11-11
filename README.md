@@ -36,6 +36,25 @@ os clean [14d]  # delete old generations, free space (also runs weekly)
 os test [dir]   # try ~/configuration without committing, until reboot
 ```
 
+## The `znix` command
+
+For editing `/etc/nixos` itself (`ZNIX_DIR` points it elsewhere):
+
+```bash
+znix check [host...]  # evaluate every host, nixos + CI configurations
+znix dry [host]       # what would download/compile (default: this machine)
+znix build [host]     # build it and diff against the running system
+znix vm [test...]     # NixOS VM tests
+znix lint             # actionlint the workflows
+znix test             # activate until reboot
+znix switch [--hold]  # activate + default boot entry; --hold pauses auto-updates
+znix boot             # default for the next boot
+```
+
+Every command warns about untracked files, because Nix can't see them.
+Without `--hold`, the next automatic update replaces a local switch with
+CI's build of `main`.
+
 ## Unlocking the disks
 
 - **desktop**: the boot splash asks for the disk passphrase (keyboard).

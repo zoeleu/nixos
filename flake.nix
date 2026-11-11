@@ -68,6 +68,7 @@
           ./modules/avatar.nix
           ./modules/branding.nix
           ./modules/os-command.nix
+          ./modules/znix.nix
           ./hosts/${name}
           {
             networking.hostName = lib.mkDefault name;

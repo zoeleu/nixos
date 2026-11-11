@@ -17,6 +17,7 @@ modules/auto-upgrade.nix # machines update from the `built` branch (moved by CI)
 modules/avatar.nix      # zoe's profile picture = her GitHub avatar (fetched daily)
 modules/branding.nix    # boot splash theme, quiet boot, fastfetch (colours: pkgs/artwork.nix)
 modules/os-command.nix  # the `os` command (status/update/rollback/...), weekly GC, boot-menu limit
+modules/znix.nix        # the `znix` command: check/dry/build/vm/lint the /etc/nixos checkout, then test/switch/boot it
 pkgs/artwork.nix        # THE accent colour + recoloured NixOS snowflake (logo, wallpaper); used by all of the above and the installer
 secrets/                # encrypted secrets (sops); .sops.yaml = who can decrypt
 home/common.nix         # zoe's Home Manager config shared by all hosts
