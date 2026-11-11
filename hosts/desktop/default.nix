@@ -23,10 +23,9 @@ let
   };
 in
 {
-  # Not booted yet: CI builds it first (it's not in any binary cache), then
-  # switch with: boot.kernelPackages = cachyos;  (replacing linuxPackages_latest)
+  # The kernel (boot.kernelPackages, below) is built by CI through
+  # modules/ci.nix, so it isn't listed here again.
   ci.heavyPackages = {
-    cachyos-kernel = cachyos.kernel;
     claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
     inherit (pkgs) codex; # overlays/codex.nix, so never in cache.nixos.org
   };
@@ -66,9 +65,11 @@ in
   # --- Boot ---
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
-  # Newest kernel for the newest amdgpu fixes (RDNA 4 needs 6.15+; both
-  # this and the LTS kernel come prebuilt from cache.nixos.org)
-  boot.kernelPackages = pkgs.linuxPackages_latest;
+  # CachyOS kernel with BORE (defined at the top). It's not in
+  # cache.nixos.org: CI compiles it and machines get it from our Attic cache.
+  # Its version follows the pinned chaotic input, not the weekly nixpkgs
+  # update. To go back: boot.kernelPackages = pkgs.linuxPackages_latest;
+  boot.kernelPackages = cachyos;
   # Boot splash (themed in modules/branding.nix); it shows the disk
   # passphrase prompt itself, typed on the keyboard as before
   boot.plymouth.enable = true;
