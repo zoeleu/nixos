@@ -27,8 +27,9 @@ in
     specialisation.boot-luks.configuration = {
       testing.initrdBackdoor = true;
       boot.initrd.luks.devices = lib.mkVMOverride {
-        cryptroot.device = "/dev/vdb";
-        cryptswap.device = "/dev/vdc"; # the Deck's second LUKS device is its swap
+        cryptroot = { device = "/dev/vdb"; bypassWorkqueues = true; };
+        # the Deck's second LUKS device is its swap
+        cryptswap = { device = "/dev/vdc"; bypassWorkqueues = true; };
       };
       virtualisation.rootDevice = "/dev/mapper/cryptroot";
       virtualisation.fileSystems."/second" = {
@@ -66,6 +67,9 @@ in
       mounts = machine.succeed("mount")
       assert "/dev/mapper/cryptroot on / type ext4" in mounts, mounts
       assert "/dev/mapper/cryptswap on /second type ext4" in mounts, mounts
+      # Opened without dm-crypt's workqueues, like the Deck (hosts/deck)
+      for name in ["cryptroot", "cryptswap"]:
+          machine.succeed(f"cryptsetup status {name} | grep -q 'no_read_workqueue no_write_workqueue'")
       # The splash ran from the real root, after unlocking
       machine.succeed("journalctl -b -u plymouth-start.service | grep -q 'Started Show Plymouth Boot Screen'")
     '';

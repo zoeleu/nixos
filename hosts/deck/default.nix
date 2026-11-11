@@ -28,6 +28,11 @@
   boot.initrd.availableKernelModules = [ "tpm_crb" "tpm_tis" ];
   boot.initrd.luks.devices."luks-028a1e8c-165a-4a27-84ab-0356af08b6fc".crypttabExtraOpts = [ "tpm2-device=auto" ];
   boot.initrd.luks.devices."luks-70a00096-ad77-4ee4-ba6e-f712e5f52d82".crypttabExtraOpts = [ "tpm2-device=auto" ];
+  # Encrypt/decrypt in the issuing context instead of dm-crypt's kcryptd
+  # workqueues (no-read/write-workqueue in crypttab): lower IO latency on
+  # the NVMe. Only changes how the devices are opened, not the disk format.
+  boot.initrd.luks.devices."luks-028a1e8c-165a-4a27-84ab-0356af08b6fc".bypassWorkqueues = true;
+  boot.initrd.luks.devices."luks-70a00096-ad77-4ee4-ba6e-f712e5f52d82".bypassWorkqueues = true;
 
   # --- Jovian ---
   jovian.devices.steamdeck.enable = true;

@@ -37,7 +37,14 @@
             # only read when formatting: install-nixos puts the passphrase
             # here (from Vaultwarden or typed), in RAM, and deletes it after
             passwordFile = "/tmp/disk.key";
-            settings.allowDiscards = true; # TRIM on the SSD
+            settings = {
+              allowDiscards = true; # TRIM on the SSD
+              # Encrypt/decrypt in the context that issued the IO instead of
+              # dm-crypt's kcryptd workqueues: lower latency on NVMe, and the
+              # IO keeps its cgroup, so BFQ weights see who it's for. Only
+              # affects unlocking (crypttab), not the on-disk format.
+              bypassWorkqueues = true;
+            };
             content = {
               type = "filesystem";
               format = "ext4";
