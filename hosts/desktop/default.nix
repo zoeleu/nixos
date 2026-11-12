@@ -164,6 +164,37 @@ in
   # but gets its own, incusbr-<uid>, from incus-user. Its VMs need DHCP and
   # DNS from the host, which the firewall drops unless the bridge is trusted.
   networking.firewall.trustedInterfaces = [ "incusbr0" "incusbr-1000" ];
+  # Instances are reachable from the host as <name>.incus (ssh baseplate-dev.incus).
+  # The bridge's dnsmasq already answers for them; systemd-resolved sends
+  # only *.incus queries there, everything else still goes to Tailscale's
+  # MagicDNS. The bridge address is picked by incus-user, so read it at runtime.
+  services.resolved.enable = true;
+  systemd.services.incus-dns-user = let
+    dev = "sys-subsystem-net-devices-incusbr\\x2d1000.device";
+  in {
+    description = "Resolve *.incus through zoe's Incus bridge";
+    bindsTo = [ dev ];
+    after = [ dev "systemd-resolved.service" ];
+    wantedBy = [ dev ];
+    path = [ config.systemd.package pkgs.iproute2 pkgs.gawk ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      for _ in $(seq 30); do
+        addr=$(ip -4 -o addr show dev incusbr-1000 | awk '{ split($4, a, "/"); print a[1]; exit }')
+        [ -n "$addr" ] && break
+        sleep 1
+      done
+      [ -n "$addr" ] || { echo "incusbr-1000 has no IPv4 address" >&2; exit 1; }
+      resolvectl dns incusbr-1000 "$addr"
+      resolvectl domain incusbr-1000 '~incus'
+      resolvectl dnssec incusbr-1000 off
+      resolvectl dnsovertls incusbr-1000 off
+    '';
+    postStop = "resolvectl revert incusbr-1000 || true";
+  };
 
   # --- Containers: rootless Podman with a Docker-compatible CLI ---
   virtualisation.podman = {
@@ -215,6 +246,22 @@ in
   # Lets zoe drive tailscaled without sudo, so the tray icon
   # (services.tailscale-systray in ./home.nix) can connect/disconnect
   services.tailscale.extraSetFlags = [ "--operator=zoe" ];
+
+  # T3 Code's local web server, available over HTTPS within the tailnet.
+  systemd.services.t3code-serve = {
+    description = "Serve T3 Code over Tailscale";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    requires = [ "tailscaled.service" ];
+    after = [ "network-online.target" "tailscaled.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --yes --https=3773 http://127.0.0.1:3773";
+      Restart = "on-failure";
+      RestartSec = "10s";
+    };
+  };
 
   # --- Apps ---
   environment.systemPackages = with pkgs; [
