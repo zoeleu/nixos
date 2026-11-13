@@ -4,7 +4,10 @@
 # secrets/secureboot.yaml. Firmware steps and recovery: ./secureboot.md
 { inputs, lib, pkgs, ciBuild ? false, ... }:
 let
-  certificate = ./secureboot/db.pem;
+  # Interpolate into a store-path string: Lanzaboote runs `toString` on
+  # publicKeyFile, which on a bare Nix path yields an unreferenced
+  # flake-source path that isn't copied into /nix/store or kept from GC.
+  certificate = "${./secureboot/db.pem}";
   signingKey = "/var/lib/sbctl/keys/db/db.key";
 in
 {
