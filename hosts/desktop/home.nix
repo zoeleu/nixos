@@ -22,6 +22,17 @@ in
     package = pkgs.vscode; # Microsoft's build
   };
 
+  # The session logs in by itself after the disk passphrase and sudo asks
+  # for nothing, so the lock screen is the only gate while the PC is on.
+  # These are Plasma's defaults, pinned so a stray click can't turn them off.
+  programs.plasma.kscreenlocker = {
+    autoLock = true;
+    timeout = 5; # minutes idle
+    lockOnResume = true;
+    passwordRequired = true;
+    passwordRequiredDelay = 0; # no grace period after the screen locks
+  };
+
   # Tailscale's own tray icon (connect/disconnect, exit nodes); it can only
   # change settings because zoe is the operator (hosts/desktop/default.nix)
   services.tailscale-systray.enable = true;

@@ -4,6 +4,11 @@
 #     decrypts at boot with /etc/ssh/ssh_host_ed25519_key
 # install-nixos adds new machines here and re-encrypts (sops updatekeys).
 creation_rules:
+  # Desktop Secure Boot keys (PK/KEK/db): zoe and the desktop only.
+  - path_regex: ^secrets/secureboot\.yaml$
+    age: >-
+      age1q64uu742a595pavz26cs9hhk0djmnv6pw5wtvwdt2du40psnz4vq2p99p4,
+      age19efx5suvta4w4lqjyx26qc5kmmnuz6gk2759kxruazvxf6g34ezqj77vd3
   - path_regex: ^secrets/[^/]+\.yaml$
     key_groups:
       - age:

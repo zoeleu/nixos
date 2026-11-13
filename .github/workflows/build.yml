@@ -123,7 +123,7 @@ jobs:
           sudo "$(nix build --no-link --print-out-paths nixpkgs#ccache.out)/bin/ccache" --dir /var/cache/ccache --zero-stats
 
       - name: Build ${{ matrix.pkg }}
-        run: nix build --option log-lines 200 .#ciConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
+        run: nix build -L --option log-lines 200 .#ciConfigurations.${{ matrix.host }}.config.ci.heavyPackages.${{ matrix.pkg }}
 
       # hits/misses, and why (only meaningful for packages built through ccache)
       - name: ccache statistics
@@ -141,7 +141,12 @@ jobs:
         run: |
           sudo chmod -R a+rX /var/cache/ccache
           du -sh /var/cache/ccache
-          if [ -n "$(ls -A /var/cache/ccache)" ]; then echo "save=true" >> "$GITHUB_OUTPUT"; fi
+          # --zero-stats creates files even if no compiler ever used ccache.
+          # Save only when there is a cached result, not just statistics.
+          if [ -n "${CCACHE_BIN:-}" ] && sudo "$CCACHE_BIN" --dir /var/cache/ccache --print-stats \
+            | awk '$1 == "files_in_cache" { found = ($2 > 0) } END { exit !found }'; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/cache/save@v4
         id: save-ccache
         if: always() && steps.ccache.outputs.save == 'true'

@@ -8,30 +8,9 @@
 # using ci.nix; nixosConfigurations still requires the real generated files.
 { config, lib, pkgs, inputs, ciBuild ? false, ... }:
 
-let
-  # CachyOS kernel (Chaotic-Nyx): BORE scheduler + Clang ThinLTO, built for
-  # x86-64-v3, the highest level the i7-8086K (Coffee Lake: AVX2, no
-  # AVX-512) supports. This kernel has no CPU-specific -march options, and
-  # NATIVE would target the CI runner's CPU, not this one.
-  # AutoFDO (CONFIG_AUTOFDO_CLANG) is on so profiles recorded here line up
-  # with the code (./kernel-afdo.nix records them); once ./kernel.afdo is
-  # committed, the kernel is optimized with it. Changing that file rebuilds
-  # the whole kernel in CI.
-  cachyos = let
-    lto = inputs.chaotic.legacyPackages.x86_64-linux.linuxPackages_cachyos-lto;
-  in lto.cachyOverride {
-    cachyVars = lto.kernel.cachyConfig.cachyVars // {
-      _cpusched = "bore";
-      _processor_opt = "GENERIC_V3";
-      _autofdo = "yes";
-    };
-    extraMakeFlags = lib.optional (builtins.pathExists ./kernel.afdo)
-      "CLANG_AUTOFDO_PROFILE=${./kernel.afdo}";
-  };
-in
 {
-  # The kernel (boot.kernelPackages, below) is built by CI through
-  # modules/ci.nix, so it isn't listed here again.
+  # The kernel (kernel.nix, Zen) comes prebuilt from cache.nixos.org;
+  # modules/ci.nix still lists it, so CI only downloads it.
   ci.heavyPackages = {
     claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
     inherit (pkgs) codex; # overlays/codex.nix, so never in cache.nixos.org
@@ -39,7 +18,9 @@ in
 
   imports = [
     ./kde-apps.nix
-    ./kernel-afdo.nix # records kernel AutoFDO profiles (GameMode starts it)
+    ./ai.nix          # local LLMs: ROCm, Ollama, llama.cpp, LM Studio
+    ./kernel.nix      # Zen kernel (prebuilt), mitigations, writeback limits
+    ./secureboot.nix  # signed boot chain; signing key restored from SOPS
     ./priorities.nix  # desktop > apps/games > services, builds, VMs
     inputs.claude-desktop.nixosModules.default
   ] ++ lib.optionals (!ciBuild) [
@@ -54,10 +35,10 @@ in
 
   # BFQ I/O scheduler on every disk (SATA SSD/HDD, NVMe, SD): keeps the
   # desktop responsive while something else hammers the disk (game installs,
-  # nix builds), at a small throughput cost on fast NVMe. It's a module in
-  # the kernel config (CONFIG_IOSCHED_BFQ=m), so load it before udev applies
-  # the rule. LUKS/dm devices have no scheduler of their own; the disk under
-  # them gets BFQ.
+  # nix builds), at a small throughput cost on fast NVMe. Zen builds it in
+  # (CONFIG_IOSCHED_BFQ=y); loading it is a no-op then, but keeps the rule
+  # working on kernels where it's a module. LUKS/dm devices have no scheduler
+  # of their own; the disk under them gets BFQ.
   boot.kernelModules = [ "bfq" ];
   services.udev.extraRules = ''
     ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*|nvme[0-9]*n[0-9]*|mmcblk[0-9]*", ATTR{queue/scheduler}="bfq"
@@ -74,11 +55,6 @@ in
   # --- Boot ---
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
-  # CachyOS kernel with BORE (defined at the top). It's not in
-  # cache.nixos.org: CI compiles it and machines get it from our Attic cache.
-  # Its version follows the pinned chaotic input, not the weekly nixpkgs
-  # update. To go back: boot.kernelPackages = pkgs.linuxPackages_latest;
-  boot.kernelPackages = cachyos;
   # Boot splash (themed in modules/branding.nix); it shows the disk
   # passphrase prompt itself, typed on the keyboard as before
   boot.plymouth.enable = true;
@@ -162,8 +138,15 @@ in
   networking.nftables.enable = true; # required by Incus
   # incusbr0 is the preseed bridge; zoe's restricted project doesn't use it
   # but gets its own, incusbr-<uid>, from incus-user. Its VMs need DHCP and
-  # DNS from the host, which the firewall drops unless the bridge is trusted.
-  networking.firewall.trustedInterfaces = [ "incusbr0" "incusbr-1000" ];
+  # DNS from the host, which the firewall drops unless allowed. Only those:
+  # the VMs run untrusted agents, so they must not reach the host's other
+  # listeners (sshd, T3 Code on 0.0.0.0:3773, KDE Connect, ...), which a
+  # trusted interface would expose. Host -> VM (ssh <name>.incus) and
+  # VM -> internet are unaffected.
+  networking.firewall.interfaces = lib.genAttrs [ "incusbr0" "incusbr-1000" ] (_: {
+    allowedUDPPorts = [ 53 67 547 ]; # DNS, DHCP, DHCPv6
+    allowedTCPPorts = [ 53 ];
+  });
   # Instances are reachable from the host as <name>.incus (ssh baseplate-dev.incus).
   # The bridge's dnsmasq already answers for them; systemd-resolved sends
   # only *.incus queries there, everything else still goes to Tailscale's

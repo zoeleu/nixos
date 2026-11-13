@@ -17,15 +17,18 @@
 #   │     │  └─ app-games.slice  CPU/IO 200             (Steam and its games)
 #   │     └─ background.slice CPU/IO 30
 #   ├─ system.slice    CPU/IO 100 (nix-daemon: batch CPU, idle IO)
-#   └─ vms.slice       CPU/IO 20, MemoryHigh 16G     (Incus and its VMs)
+#   └─ vms.slice       CPU/IO 20, CPU ceiling 8 threads, RAM ceiling 20G
 #
 # Slice names nest by dash: foo-bar.slice lives in foo.slice. Hence
 # "vms" (top level) and "app-games" (inside app.slice).
-{ lib, ... }:
+{ config, lib, ... }:
 
 let
   # MemoryLow only protects a cgroup if every ancestor has at least as much.
   sessionMemory = "2G";
+  # The generated disk.nix chooses this path; never duplicate its disk ID.
+  vmDisks = lib.optional (config ? disko.devices.disk.main.device)
+    config.disko.devices.disk.main.device;
 in
 {
   # --- System level ---
@@ -51,12 +54,25 @@ in
   # limits.disk.priority only apply to containers, so the slice does it.
   # Above MemoryHigh the VMs are throttled and reclaimed (free page reporting
   # hands guest memory back) instead of pushing the desktop into swap.
+  # Weights alone aren't ceilings: all VMs together get at most eight of
+  # this PC's twelve logical CPUs and 20G RAM, regardless of their count.
+  # The CPU quota is aggregate time, not four dedicated/reserved threads.
   systemd.slices.vms = {
     description = "Incus VMs, below the desktop";
     sliceConfig = {
       CPUWeight = 20;
+      CPUQuota = "800%";
+      CPUQuotaPeriodSec = "10ms";
       IOWeight = 20;
       MemoryHigh = "16G";
+      MemoryMax = "20G";
+      MemorySwapMax = "4G";
+      # Bound sequential traffic AND small random IO on the system SSD.
+      # BFQ weights still arbitrate below these aggregate VM ceilings.
+      IOReadBandwidthMax = map (disk: "${disk} 300M") vmDisks;
+      IOWriteBandwidthMax = map (disk: "${disk} 150M") vmDisks;
+      IOReadIOPSMax = map (disk: "${disk} 20000") vmDisks;
+      IOWriteIOPSMax = map (disk: "${disk} 10000") vmDisks;
     };
   };
   systemd.services.incus.serviceConfig.Slice = "vms.slice";

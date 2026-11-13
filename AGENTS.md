@@ -133,6 +133,12 @@ evaluate instead, and leave applying to Zoe.
 - **Desktop: sudo is passwordless for zoe** (`wheelNeedsPassword = false`),
   on purpose. Anything running as zoe is effectively root there, so run
   untrusted code and autonomous agents in Incus/Podman, not in her session.
+  The Incus bridges get only DNS/DHCP from the host; never make them
+  `trustedInterfaces`.
+- **Desktop: Secure Boot signs on the machine only** (Lanzaboote,
+  `hosts/desktop/secureboot.nix`, steps in `secureboot.md`). The signing key
+  never goes to CI, GitHub secrets, the Nix store or Attic. The kernel is in
+  lockdown, so out-of-tree kernel modules don't load.
 - One look everywhere: colours and artwork come from `pkgs/artwork.nix`
   only. Don't hard-code the accent colour elsewhere.
 - Keep 2 builds × 4 cores on the Deck (`nix.settings.max-jobs`/`cores`);
