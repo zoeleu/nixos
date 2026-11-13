@@ -2,13 +2,17 @@
 #   - zoe's age key, for editing (Bitwarden item "sops: age key")
 #   - each machine's SSH host key, converted with ssh-to-age; sops-nix
 #     decrypts at boot with /etc/ssh/ssh_host_ed25519_key
-# install-nixos adds new machines here and re-encrypts (sops updatekeys).
+# install-nixos adds new machines here and re-encrypts (sops updatekeys): to
+# the general rule always, to the secureboot rule only for a host that declares
+# sops.secrets.secureboot-db-key. Rules are found by path_regex, not position.
 creation_rules:
-  # Desktop Secure Boot keys (PK/KEK/db): zoe and the desktop only.
+  # Desktop Secure Boot keys (PK/KEK/db): zoe and the desktop only. Same
+  # shape as the rule below, so install-nixos edits both the same way.
   - path_regex: ^secrets/secureboot\.yaml$
-    age: >-
-      age1q64uu742a595pavz26cs9hhk0djmnv6pw5wtvwdt2du40psnz4vq2p99p4,
-      age19efx5suvta4w4lqjyx26qc5kmmnuz6gk2759kxruazvxf6g34ezqj77vd3
+    key_groups:
+      - age:
+          - age1q64uu742a595pavz26cs9hhk0djmnv6pw5wtvwdt2du40psnz4vq2p99p4 # zoe (admin)
+          - age19efx5suvta4w4lqjyx26qc5kmmnuz6gk2759kxruazvxf6g34ezqj77vd3 # desktop
   - path_regex: ^secrets/[^/]+\.yaml$
     key_groups:
       - age:

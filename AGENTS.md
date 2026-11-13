@@ -29,6 +29,8 @@ hosts/deck/pxe.nix      # PXE helper for the LAN (dnsmasq proxy-DHCP + iPXE -> n
 hosts/deck/touch-unlock.nix # disk passphrase on the touchscreen (unl0kr), boot splash only after unlocking
 hosts/<name>/disko.nix  # disk layout (partitions, LUKS, swap) for hosts installed by the ISO
 hosts/<name>/disk.nix   # which disk (by-id); written by the installer, like hardware-configuration.nix
+hosts/desktop/secureboot.nix # Lanzaboote; signing key from sops (steps and state: secureboot.md)
+hosts/desktop/{kernel,ai,priorities}.nix # Zen + kernel params; local LLMs (ROCm, Ollama); who wins under load
 installer/              # installer as ISO (iso.nix) and network boot (netboot.nix); iso.yml publishes both
                         #   common.nix = kiosk session (sway, tabs) + helpers; gui.py = the window;
                         #   install-nixos.sh = the engine that does everything (also runs alone on a console)
@@ -43,12 +45,12 @@ Hosts:
 - `desktop`: AMD RX 9060 XT PC, Plasma + Plasma Login Manager, LUKS
   (passphrase at boot) then auto-login into zoe, key-only SSH, Incus for
   AI-agent VMs (zoe in the restricted `incus` group, never `incus-admin`).
-  Not installed yet: its `hardware-configuration.nix` and `disk.nix` are
-  missing on purpose (the installer ISO writes them),
-  so nixosConfigurations skips it (see flake.nix). ciConfigurations builds
-  it with the explicit build-only hosts/desktop/ci.nix profile (tmpfs root,
-  no bootloader). CI uses the real configuration once the generated files
-  exist. Never write those generated files by hand.
+  Zen kernel, Secure Boot (Lanzaboote), local LLMs. Installed: its
+  `hardware-configuration.nix` and `disk.nix` were written by the installer
+  ISO, so CI builds the real configuration. `hosts/desktop/ci.nix` is the
+  build-only profile (tmpfs root, no bootloader) from before that; a host
+  folder without generated files gets one to be built in CI
+  (`ciConfigurations`, see flake.nix). Never write generated files by hand.
 
 ## Where things go
 
@@ -79,7 +81,7 @@ export NIX_CONFIG="experimental-features = nix-command flakes"
 nix eval --json .#nixosConfigurations --apply builtins.attrNames          # hosts
 nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath   # must succeed for every host
 nix build --dry-run .#nixosConfigurations.<host>.config.system.build.toplevel      # what would compile
-# Also evaluate/dry-run every ciConfigurations host (includes pre-install desktop):
+# Also evaluate/dry-run every ciConfigurations host (adds hosts not installed yet):
 nix eval --raw .#ciConfigurations.<host>.config.system.build.toplevel.drvPath
 nix run nixpkgs#actionlint -- -ignore SC2016 .github/workflows/build.yml  # after editing CI
 nix build -L .#checks.x86_64-linux.touch-unlock    # after touching the Deck's boot/unlock (VM test, ~2 min)
@@ -172,6 +174,10 @@ evaluate instead, and leave applying to Zoe.
   protocol (documented at the top of the script). New questions go in the
   script through `ask_line` / `ask_hidden` / `ask_secret` so both the
   console and the GUI get them.
+- The installer edits `.sops.yaml` rules by their `path_regex` and expects
+  each rule as `key_groups[0].age` with the host name as line comment; keep
+  that shape. `secrets/secureboot.yaml` is only for hosts that declare
+  `sops.secrets.secureboot-db-key` (never the Deck).
 - `installer/troubleshooting.md` becomes the assistants' instructions on the
   live installer (CLAUDE.md for Claude Code, AGENTS.md for Codex and
   OpenCode, which are free software and on the image); keep its "never format" rules in sync with the resume logic.

@@ -27,16 +27,20 @@ was never used, and it cost a ~4-hour CI job per change. Any measurable
 gain over Zen was not established for this workload. Its history is in git.
 
 EAC Linux v2 was out of scope: it needs a distro-signed boot chain that
-NixOS can't provide. The assessment is in `docs/eac-kernels/`.
+NixOS can't provide. Vendor-signed kernels (CachyOS EAC, Fedora, openSUSE
+and others) were also looked at for Secure Boot and rejected: no vendor
+signs a NixOS initrd, which is where the passphrase prompt lives, so they
+don't stop a fake prompt. Signing locally does (`secureboot.md`), and then
+the kernel can be chosen for performance alone.
 
 ## Keeping agents below the desktop
 
 `priorities.nix` puts Incus and its QEMU children in `vms.slice`, with low
 CPU/IO weights. All VMs together have a CPU quota of 800% (eight logical
 CPUs' time, not pinned or reserved cores), a 10 ms quota period,
-16 GiB memory soft limit, 20 GiB hard limit and 4 GiB swap limit. Exceeding
-the hard memory limit can kill a VM; size guest RAM and concurrent jobs
-accordingly. The system SSD has aggregate VM ceilings of 300 MB/s read,
+16 GiB memory soft limit, 24 GiB hard limit and 12 GiB swap limit. Exceeding
+the hard memory limit (or 28 GiB of RAM and swap together) can kill a VM;
+size guest RAM and concurrent jobs accordingly. The system SSD has aggregate VM ceilings of 300 MB/s read,
 150 MB/s write, 20,000 read IOPS and 10,000 write IOPS. These are initial
 responsiveness-oriented limits, tunable in that file; other disks are not
 bandwidth capped. BFQ weights arbitrate disk contention below the ceilings.

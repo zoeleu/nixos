@@ -96,15 +96,14 @@ is the path Lanzaboote signs with. The certificate is pinned in
 `secureboot/db.pem`, so a different key fails verification. The PK and KEK
 private keys under `/var/lib/sbctl` are not needed for daily signing.
 
-Reinstalling: `nixos-install` signs the boot files, and sops-nix has not run
-yet at that point. Put the key in place first, from the installer:
-
-```bash
-mkdir -p /mnt/var/lib/sbctl/keys/db
-SOPS_AGE_KEY=<Bitwarden "sops: age key"> sops -d --extract '["db_key"]' \
-  /mnt/etc/nixos/secrets/secureboot.yaml > /mnt/var/lib/sbctl/keys/db/db.key
-chmod 400 /mnt/var/lib/sbctl/keys/db/db.key
-```
+Reinstalling: `install-nixos` handles it. Lanzaboote signs during
+`nixos-install`, before sops-nix has ever run, so the installer adds the
+new SSH host key to both rules in `.sops.yaml` (replacing the old desktop
+key), re-encrypts, and writes `db_key` to
+`/mnt/var/lib/sbctl/keys/db/db.key` itself. It checks that the admin age
+key opens `secrets/secureboot.yaml` before erasing anything. Commit and push
+those changes after the first boot. The Deck is never added to the Secure
+Boot rule.
 
 The installer stick itself needs Secure Boot switched off to boot (step 5).
 

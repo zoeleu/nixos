@@ -4,8 +4,8 @@
 #
 # Installed with the installer ISO (`install-nixos`, see installer/), which
 # partitions the disk per ./disko.nix and writes ./hardware-configuration.nix
-# and ./disk.nix. Until those exist it is available only in ciConfigurations,
-# using ci.nix; nixosConfigurations still requires the real generated files.
+# and ./disk.nix. (ci.nix is the build-only profile CI used before those
+# existed; it is unused now.)
 { config, lib, pkgs, inputs, ciBuild ? false, ... }:
 
 {
@@ -30,8 +30,29 @@
     inputs.disko.nixosModules.disko
   ];
 
-  # Compressed swap in RAM, used before the 32 GB swap partition
-  zramSwap.enable = true;
+  # Compressed swap in RAM (zstd, measured ~2.8:1 here), used before the
+  # 32 GB swap partition. As big as RAM: the size is how much may go in, not
+  # RAM set aside, and full it costs ~11 GB. At the default 50% it filled up
+  # with a dev VM, Chrome and agents running, and what spilled to the SSD was
+  # the newest pages, not the coldest. A new size applies at the next boot.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 100;
+  };
+  boot.kernel.sysctl = {
+    # Reading back from zram costs microseconds, re-reading a file from disk
+    # far more, so prefer swapping over dropping the file cache (default 60
+    # left ~1 GB of cache, and programs stuttered back in from disk)
+    "vm.swappiness" = 180;
+    # No swap readahead: nothing is sequential in zram, and the 8 pages it
+    # reads by default are 7 decompressed for nothing
+    "vm.page-cluster" = 0;
+    # Reclaim in the background earlier (~1.25% of RAM free instead of 0.1%),
+    # so programs asking for memory rarely have to wait for it themselves;
+    # the boost only helps against fragmentation on spinning swap
+    "vm.watermark_scale_factor" = 125;
+    "vm.watermark_boost_factor" = 0;
+  };
 
   # BFQ I/O scheduler on every disk (SATA SSD/HDD, NVMe, SD): keeps the
   # desktop responsive while something else hammers the disk (game installs,
@@ -262,6 +283,7 @@
     python3
     podman-compose
     mangohud
+    prismlauncher
     usbutils # lsusb
     libnfc   # NFC tools; reader set up above
     jq

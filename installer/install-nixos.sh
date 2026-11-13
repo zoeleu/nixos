@@ -12,7 +12,10 @@ set -euo pipefail
 #  2. pick a host (one with hosts/<host>/disko.nix) and a disk
 #  3. get the passwords from Vaultwarden (or ask, and offer to save them)
 #  4. write hosts/<host>/hardware-configuration.nix and disk.nix
-#  5. partition + encrypt + format + mount with disko
+#  5. partition + encrypt + format + mount with disko; add the machine's new
+#     SSH host key to .sops.yaml and re-encrypt the secrets it may read. A
+#     host that signs its boot files (Secure Boot, the desktop) also gets
+#     its signing key on the new disk, which nixos-install needs
 #  6. nixos-install from the flake, using the host's binary caches
 #  7. set zoe's password, hand /etc/nixos to zoe
 #
@@ -24,7 +27,8 @@ set -euo pipefail
 #   "nixos: attic"   Login: password = Attic pull token -> /etc/nix/netrc
 #                    (private binary cache https://cache.zoe.dev.br/nixos)
 #
-# Nothing is pushed: after the first boot, commit and push the two new files.
+# Nothing is pushed: after the first boot, commit and push the two new files
+# and the new machine key in .sops.yaml + secrets/ (see the end of this script).
 
 REPO_URL="https://github.com/zoeleu/nixos"
 VAULT_URL="https://vw.zoe.dev.br"
@@ -367,16 +371,64 @@ if [ "$logged_in" = 1 ] && vault_session_unlock; then
     BW_SESSION=""
     red "Vault unavailable or skipped; asking for missing credentials instead."
 fi
+# --- SOPS helpers ---
+# .sops.yaml has one rule for secrets/secureboot.yaml (zoe + the machine that
+# signs its boot files) and a general one for the other files. Find them by
+# path_regex, never by position, so adding a rule can't break this.
+GENERAL_RULE='^secrets/[^/]+\.yaml$'
+SECUREBOOT_RULE='^secrets/secureboot\.yaml$'
+SECUREBOOT_FILE=secrets/secureboot.yaml
+SIGNING_KEY=/mnt/var/lib/sbctl/keys/db/db.key
+
+# Does this host sign its boot files with the key in secrets/secureboot.yaml
+# (Lanzaboote)? Ask the configuration, not the hostname. Needs the host's
+# generated files, so it is only called from step 5 on.
+_uses_secureboot=""
+host_uses_secureboot() {
+  if [ -z "$_uses_secureboot" ]; then
+    _uses_secureboot=$(nix eval --json ".#nixosConfigurations.$host.config.sops.secrets" \
+      --apply 'builtins.hasAttr "secureboot-db-key"') || die "cannot evaluate the SOPS secrets of '$host'"
+  fi
+  [ "$_uses_secureboot" = true ]
+}
+
+# Files the host key must be able to read: everything except the Secure Boot
+# keys, which only a host that signs its boot files gets.
+host_secret_files() {
+  local f
+  for f in secrets/*.yaml; do
+    if [ "$f" != "$SECUREBOOT_FILE" ] || host_uses_secureboot; then printf '%s\n' "$f"; fi
+  done
+}
+
+rule_exists() { RULE=$1 yq -e '.creation_rules[] | select(.path_regex == strenv(RULE))' .sops.yaml >/dev/null; }
+rule_has_key() {
+  RULE=$1 KEY=$2 yq -e '[.creation_rules[] | select(.path_regex == strenv(RULE)) | .key_groups[0].age[]] | contains([strenv(KEY)])' .sops.yaml >/dev/null 2>&1
+}
+# Put KEY in the rule, labelled with the host name; an older key of the same
+# host (a reinstall makes a new SSH host key) is dropped first.
+rule_enrol_key() {
+  rule_exists "$1" || die ".sops.yaml has no rule $1"
+  RULE=$1 KEY=$2 NAME=$host yq -i '
+    (.creation_rules[] | select(.path_regex == strenv(RULE)) | .key_groups[0].age)
+      |= (map(select(line_comment != strenv(NAME))) + [strenv(KEY)])
+    | (.creation_rules[] | select(.path_regex == strenv(RULE)) | .key_groups[0].age[-1]) line_comment = strenv(NAME)' .sops.yaml
+}
+
+ask_admin_age_key() {
+  local k
+  k=$(ask_hidden "SOPS admin age secret key (Bitwarden 'sops: age key')")
+  [ -n "$k" ] || die "SOPS access is required; no disk was formatted"
+  printf '%s\n' "$k" > "$SECRETS/age.key"
+}
+
 # SOPS is required by the installed system. Check it before any disk writes,
 # and recover cache authentication from the encrypted source of truth.
 if [ ! -s "$SECRETS/age.key" ] && [ "$resume" = 1 ]; then
   ssh-to-age -private-key -i /mnt/etc/ssh/ssh_host_ed25519_key > "$SECRETS/age.key"
 fi
 if [ ! -s "$SECRETS/age.key" ] || ! SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt --output-type json secrets/attic.yaml > "$SECRETS/attic.json" 2>/dev/null; then
-  age_key=$(ask_hidden "SOPS admin age secret key (Bitwarden 'sops: age key')")
-  [ -n "$age_key" ] || die "SOPS access is required; no disk was formatted"
-  printf '%s\n' "$age_key" > "$SECRETS/age.key"
-  age_key=""
+  ask_admin_age_key
   SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt --output-type json secrets/attic.yaml > "$SECRETS/attic.json" \
     || die "SOPS decryption failed; fix the age key before continuing"
 fi
@@ -388,7 +440,12 @@ rm -f "$SECRETS/attic.json"
 curl --fail --silent --show-error --max-time 30 --netrc-file "$SECRETS/netrc" \
   -o /dev/null https://cache.zoe.dev.br/nixos/nix-cache-info \
   || die "private cache authentication failed; renew secrets/attic.yaml before continuing"
+# A new install has the admin key here, which opens every file, the Secure
+# Boot keys included: so step 5 can't fail on them after the disk is erased.
+# --resume may be using the machine's own key, and not every machine may read
+# the Secure Boot keys (step 5 checks that per host).
 for f in secrets/*.yaml; do
+  if [ "$resume" = 1 ] && [ "$f" = "$SECUREBOOT_FILE" ]; then continue; fi
   SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops --decrypt "$f" >/dev/null \
     || die "SOPS decryption failed for $f; no disk was formatted"
 done
@@ -447,24 +504,53 @@ if [ ! -f /mnt/etc/ssh/ssh_host_ed25519_key ]; then
   ssh-keygen -q -t ed25519 -N "" -C "root@$host" -f /mnt/etc/ssh/ssh_host_ed25519_key
 fi
 host_age=$(ssh-keygen -y -f /mnt/etc/ssh/ssh_host_ed25519_key | ssh-to-age)
-if grep -q "$host_age" .sops.yaml; then
-  echo "This machine can already decrypt the secrets."
+# The general rule is for every host; the Secure Boot rule only for a host
+# that signs its boot files with that key.
+rules=("$GENERAL_RULE")
+if host_uses_secureboot; then rules+=("$SECUREBOOT_RULE"); fi
+missing=0
+for rule in "${rules[@]}"; do
+  rule_exists "$rule" || die ".sops.yaml has no rule $rule"
+  rule_has_key "$rule" "$host_age" || missing=1
+done
+if [ "$missing" = 0 ]; then
+  echo "This machine can already decrypt its secrets."
 elif [ -f "$SECRETS/age.key" ]; then
-  # replace an older key for this host, then add this one
-  yq -i "(.creation_rules[0].key_groups[0].age) |= map(select(line_comment != \"$host\"))" .sops.yaml
-  yq -i ".creation_rules[0].key_groups[0].age += [\"$host_age\"] | .creation_rules[0].key_groups[0].age[-1] line_comment = \"$host\"" .sops.yaml
+  # a reinstall makes a new host key: it replaces the old key of this host
+  for rule in "${rules[@]}"; do rule_enrol_key "$rule" "$host_age"; done
+  # updatekeys only touches the files whose rule changed, and never gives
+  # the Secure Boot file to a host outside its rule
   for f in secrets/*.yaml; do SOPS_AGE_KEY_FILE="$SECRETS/age.key" sops updatekeys -y "$f"; done
   git add .sops.yaml secrets
   echo "Added '$host' to .sops.yaml and re-encrypted the secrets."
 else
   die "cannot enroll '$host' in SOPS; an admin age key is required"
 fi
-# Verify every encrypted file with the target host key, not just the admin key.
+# Verify the files this host should read with the target host key, not just
+# the admin key. (The Deck must NOT be able to read the Secure Boot keys.)
 ssh-to-age -private-key -i /mnt/etc/ssh/ssh_host_ed25519_key > "$SECRETS/host-age.key"
-for f in secrets/*.yaml; do
+while IFS= read -r f; do
   SOPS_AGE_KEY_FILE="$SECRETS/host-age.key" sops --decrypt "$f" >/dev/null \
     || die "target host cannot decrypt $f; fix SOPS recipients before installation"
-done
+done < <(host_secret_files)
+
+# Lanzaboote signs the boot files during nixos-install, before sops-nix has
+# ever run on the new system: put the signing key where it looks. Decrypted
+# with the machine's own key (just verified above) straight onto the
+# encrypted disk; never into the repo or the Nix store. sops-nix takes the
+# path over at the first boot.
+if host_uses_secureboot && [ ! -s "$SIGNING_KEY" ]; then
+  install -d -m 0700 /mnt/var/lib/sbctl /mnt/var/lib/sbctl/keys /mnt/var/lib/sbctl/keys/db
+  rm -f "$SIGNING_KEY.new"
+  if ! SOPS_AGE_KEY_FILE="$SECRETS/host-age.key" sops --decrypt --extract '["db_key"]' "$SECUREBOOT_FILE" > "$SIGNING_KEY.new" \
+     || [ ! -s "$SIGNING_KEY.new" ]; then
+    rm -f "$SIGNING_KEY.new"
+    die "cannot write the Secure Boot signing key; run: install-nixos --resume $host"
+  fi
+  chmod 0400 "$SIGNING_KEY.new"
+  mv "$SIGNING_KEY.new" "$SIGNING_KEY"
+  echo "Placed the Secure Boot signing key on the new disk."
+fi
 rm -f "$SECRETS/age.key" "$SECRETS/host-age.key"
 
 # --- 6. install ---
@@ -516,4 +602,7 @@ echo
 bold "Done. Remove the USB stick and reboot."
 echo "After logging in, sign in to Bitwarden ($VAULT_URL) and enable its SSH"
 echo "agent, then save the machine's new files to GitHub:"
-echo "  cd /etc/nixos && git commit -m '$host: hardware config' && git push"
+echo "  cd /etc/nixos && git add -A hosts/$host .sops.yaml secrets \\"
+echo "    && git commit -m '$host: hardware config and machine key' && git push"
+echo "Do it soon: until it's pushed and built, the machine's automatic updates"
+echo "carry secrets encrypted for other keys and can't use the private cache."

@@ -16,7 +16,7 @@ hosts/<name>/        # one folder per machine (hostname = folder name)
 | Host | Machine |
 |---|---|
 | `deck` | Steam Deck (LCD) with [Jovian NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS) |
-| `desktop` | AMD RX 9060 XT PC, Plasma, Incus for AI-agent VMs; installs from the installer ISO (not installed yet) |
+| `desktop` | AMD RX 9060 XT PC: Plasma, Secure Boot, local LLMs, Incus for AI-agent VMs |
 
 Shared everywhere: fish, pt_BR formats, Tailscale, Bitwarden (also as SSH
 agent and for signing git commits), Home Manager, claude-code, and one look:
@@ -58,13 +58,37 @@ CI's build of `main`.
 ## Unlocking the disks
 
 - **desktop**: the boot splash asks for the disk passphrase (keyboard).
-  `sudo` asks no password there.
+  Then it logs into zoe by itself and `sudo` asks no password, so the
+  passphrase is the gate (see below).
 - **deck**: an on-screen keyboard asks for it on the touchscreen (a USB
   keyboard still works); the splash appears after unlocking. To skip the
   passphrase entirely, enrol the TPM once, on the Deck:
   `sudo deck-tpm-enroll`. From then on it boots straight to Gaming Mode;
   the passphrase stays valid as fallback, and zoe's home stays encrypted
   with her login password. Undo: `sudo systemd-cryptenroll --wipe-slot=tpm2 <device>`.
+
+## The desktop's security setup
+
+- The LUKS passphrase is the gate. After it, zoe logs in automatically and
+  `sudo` is passwordless, so anything running as zoe is effectively root.
+  The screen lock (5 minutes idle, password required) is pinned in
+  `hosts/desktop/home.nix`. Only the NixOS drive is encrypted: the Windows
+  drives are whatever Windows makes them (BitLocker or nothing).
+- AI agents run in Incus VMs (zoe is in `incus`, never `incus-admin`), not in
+  her session. The Incus bridges give the VMs only DNS and DHCP from the
+  host, not access to its other services; don't make them trusted interfaces.
+  VMs and builds yield to the desktop (`hosts/desktop/priorities.nix`).
+- The kernel is Zen from nixpkgs (prebuilt; notes in
+  [hosts/desktop/kernel.md](hosts/desktop/kernel.md)), with `intel_iommu=on`.
+- Secure Boot with Lanzaboote: the desktop signs its own boot files, nothing
+  is signed in CI. The kernel runs in lockdown, so out-of-tree kernel modules
+  don't load. Enforcement is not switched on in the firmware yet; what is
+  left to do, the firmware settings and recovery are in
+  [hosts/desktop/secureboot.md](hosts/desktop/secureboot.md). Once it is on,
+  the installer stick needs Secure Boot switched off to boot.
+- Local LLMs (`hosts/desktop/ai.nix`): Ollama on 127.0.0.1:11434 and llama.cpp
+  use Vulkan by default; ROCm builds are next to them (`llama-server-rocm`,
+  `ollama-rocm`), and LM Studio is installed.
 
 ## Usage
 
@@ -98,18 +122,19 @@ socket (`~/.bitwarden-ssh-agent.sock`).
 
 ## Secrets (sops-nix)
 
-Desktop Secure Boot keys, firmware steps and recovery are documented
-in [hosts/desktop/secureboot.md](hosts/desktop/secureboot.md).
-
 Secrets live encrypted in `secrets/*.yaml` and are decrypted on each machine
 at boot with its SSH host key (`modules/secrets.nix`). `.sops.yaml` lists who
-can decrypt: zoe's age key (Bitwarden `sops: age key`) and every machine.
+can decrypt: zoe's age key (Bitwarden `sops: age key`) and every machine,
+except `secrets/secureboot.yaml`, which only zoe and the desktop can decrypt
+(the Deck cannot). Secure Boot keys, firmware steps and recovery:
+[hosts/desktop/secureboot.md](hosts/desktop/secureboot.md).
 
 ```bash
 SOPS_AGE_KEY=$(bw get password "sops: age key") sops secrets/attic.yaml   # edit
 ```
 
-Currently: `secrets/attic.yaml` (pull token for the private Attic cache).
+Currently: `secrets/attic.yaml` (pull token for the private Attic cache) and
+`secrets/secureboot.yaml` (the desktop's Secure Boot keys).
 The installer adds new machines to `.sops.yaml` automatically.
 
 ## Installing a machine (installer ISO)
@@ -138,10 +163,22 @@ https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
    `disk passphrase` = disk encryption passphrase); if missing it asks and
    offers to save them. Skip the vault to just type them. Then wait.
 4. After the first boot, sign in to Bitwarden and enable its SSH agent, then
-   as zoe: `cd /etc/nixos && git commit -m "<host>:
-   hardware config" && git push` (the installer generated
-   `hardware-configuration.nix` and `disk.nix` for the host, and made
-   `/etc/nixos` zoe's, pushing over SSH).
+   as zoe:
+
+   ```bash
+   cd /etc/nixos && git add -A hosts/<host> .sops.yaml secrets
+   git commit -m "<host>: hardware config and machine key" && git push
+   ```
+
+   The installer generated `hardware-configuration.nix` and `disk.nix` for
+   the host, encrypted the secrets for the machine's new SSH host key, and
+   made `/etc/nixos` zoe's (pushing over SSH). Do it soon: until it is
+   pushed and built, the machine's automatic updates carry secrets it can't
+   decrypt, so it can't use the private cache.
+
+The desktop signs its boot files (Secure Boot). The installer puts the
+signing key on the new disk by itself; the stick only boots with Secure Boot
+switched off in the firmware, so switch it back on afterwards.
 
 While it installs, the header bar has Chromium, Spotify, YouTube, a
 terminal, Bluetooth, sound and network. The image is free software only, so
@@ -204,8 +241,7 @@ of vendored ones, and some nixpkgs packages don't provide them yet.
 TeX engine); OpenSSL alone cannot satisfy it. `overlays/codex.nix` adds
 AWS-LC, zstd, SQLite, oniguruma, zlib and dbus to Codex, which ChatGPT and
 T3 Code also use. `nix build .#tectonic .#chatgpt` tests these packages (and
-Codex) even before the desktop's generated hardware files are available. The
-lock file is unchanged.
+Codex). The lock file is unchanged.
 
 ### Network boot (PXE) instead of a USB stick
 
@@ -255,20 +291,22 @@ be prepared before it's installed.
 `.github/workflows/build.yml` builds every host on each push and weekly
 (with `nix flake update`):
 
-The matrix uses `ciConfigurations`: installed hosts use their exact real
-configuration. Before the desktop's generated hardware files are committed,
-`hosts/desktop/ci.nix` supplies an explicit build-only profile with a
-disposable tmpfs root and no bootloader. This profile is never exported in
-`nixosConfigurations`, so the installer and auto-upgrade keep using real
-hardware/disk files. Once those files are committed, CI automatically builds
-the real desktop configuration instead.
+The matrix uses `ciConfigurations`: installed hosts (a `hardware-configuration.nix`
+exists) use their exact real configuration: today, both the Deck and the
+desktop. A host that isn't installed yet can opt into CI
+with a `ci.nix` (a build-only profile: tmpfs root, no bootloader, never
+exported in `nixosConfigurations`); `hosts/desktop/ci.nix` is one, unused
+now that the real files exist. Nothing is signed in CI:
+Secure Boot signing happens on the desktop (Lanzaboote is off in
+build-only profiles).
 
 1. Each slow package (`ci.heavyPackages`: kernel, Mesa, PipeWire from
    `modules/ci.nix`, plus per-host extras) builds in its own job, all on
    separate runners at the same time.
 2. Then each host's full system builds, downloading those from the cache.
-   Desktop also lists its kernel (Zen, normally just downloaded from
-   cache.nixos.org) and Claude Desktop as heavy jobs. It uses the same cache upload, ccache workflow
+   The desktop adds Claude Desktop and Codex as heavy jobs (its Zen kernel
+   is also listed by `modules/ci.nix`, but it is just downloaded from
+   cache.nixos.org). It uses the same cache upload, ccache workflow
    and failure handling as the Deck; no separate desktop-only app job.
 3. `built` advances only after the complete Deck and desktop matrix succeeds.
    The weekly lock-file commit also waits for both hosts.

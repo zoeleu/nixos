@@ -14,7 +14,8 @@ wrapper, the script's path is in its last line) runs seven steps:
 2. Check machine and disk
 3. Sign in and collect secrets (Vaultwarden via `bw`, sops age key, cache token)
 4. Partition and encrypt the disk (disko: GPT, EFI, swap, LUKS2 + ext4), mounted at `/mnt`
-5. Enrol the machine's secrets (its SSH host key is added to `.sops.yaml`)
+5. Enrol the machine's secrets (its SSH host key is added to `.sops.yaml`; the
+   desktop's Secure Boot signing key is placed in `/mnt/var/lib/sbctl/keys/db/db.key`)
 6. Install NixOS (`nixos-install --flake /mnt/etc/nixos#<host>`)
 7. Finish up (zoe's password, ownership of `/etc/nixos`)
 
@@ -51,6 +52,10 @@ system.
 - Never print secrets: the vault session, the sops age key, the disk
   passphrase, `/run/install-secrets.*`, any netrc.
 - Don't change the LUKS passphrase or zoe's password.
+- If `nixos-install` fails signing the boot files (Lanzaboote, desktop
+  only), `/mnt/var/lib/sbctl/keys/db/db.key` is missing or empty. Resume
+  writes it again; don't copy it from anywhere else and never print it.
+- Never add the Deck to the `secrets/secureboot.yaml` rule in `.sops.yaml`.
 - Fixes to the configuration go in `/mnt/etc/nixos` (the copy that gets
   installed and later pushed); keep them minimal and tell Zoe what changed,
   since she commits it after the first boot.

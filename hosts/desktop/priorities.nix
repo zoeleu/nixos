@@ -17,7 +17,7 @@
 #   │     │  └─ app-games.slice  CPU/IO 200             (Steam and its games)
 #   │     └─ background.slice CPU/IO 30
 #   ├─ system.slice    CPU/IO 100 (nix-daemon: batch CPU, idle IO)
-#   └─ vms.slice       CPU/IO 20, CPU ceiling 8 threads, RAM ceiling 20G
+#   └─ vms.slice       CPU/IO 20, CPU ceiling 8 threads, RAM ceiling 24G
 #
 # Slice names nest by dash: foo-bar.slice lives in foo.slice. Hence
 # "vms" (top level) and "app-games" (inside app.slice).
@@ -55,8 +55,19 @@ in
   # Above MemoryHigh the VMs are throttled and reclaimed (free page reporting
   # hands guest memory back) instead of pushing the desktop into swap.
   # Weights alone aren't ceilings: all VMs together get at most eight of
-  # this PC's twelve logical CPUs and 20G RAM, regardless of their count.
+  # this PC's twelve logical CPUs and 24G RAM, regardless of their count.
   # The CPU quota is aggregate time, not four dedicated/reserved threads.
+  #
+  # The three memory numbers have to fit the biggest VM (26 GiB guest plus
+  # QEMU's own memory, ~27G):
+  #   MemoryHigh + MemorySwapMax >= that, or what is above MemoryHigh has
+  #     nowhere to go and the kernel stalls the VM instead (seconds per
+  #     allocation);
+  #   MemoryMax + MemorySwapMax >= that, or QEMU is OOM-killed.
+  # What a VM has above 16G therefore sits in zram (default.nix), ~3x smaller.
+  #
+  # A process only changes slice when it starts: after changing Slice=, a VM
+  # that keeps running across the Incus restart stays in the old cgroup.
   systemd.slices.vms = {
     description = "Incus VMs, below the desktop";
     sliceConfig = {
@@ -65,8 +76,8 @@ in
       CPUQuotaPeriodSec = "10ms";
       IOWeight = 20;
       MemoryHigh = "16G";
-      MemoryMax = "20G";
-      MemorySwapMax = "4G";
+      MemoryMax = "24G";
+      MemorySwapMax = "12G";
       # Bound sequential traffic AND small random IO on the system SSD.
       # BFQ weights still arbitrate below these aggregate VM ceilings.
       IOReadBandwidthMax = map (disk: "${disk} 300M") vmDisks;
