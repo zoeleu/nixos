@@ -1,14 +1,15 @@
-# Desktop kernel: Zen (nixpkgs), prebuilt on cache.nixos.org, so nothing is
-# compiled in CI or here. Tuned for desktop latency: full preemption,
-# 1000 Hz timer, BFQ built in, huge pages only on request (madvise). It keeps
-# every cgroup control priorities.nix and ai.nix use to hold the Incus VMs
-# back (CPU weight/quota, BFQ IO weights, IO throttling).
-# Follows the weekly nixpkgs update. To go back to stock:
-#   boot.kernelPackages = pkgs.linuxPackages_latest;
+# Desktop kernel: the latest stable kernel from nixpkgs, prebuilt on
+# cache.nixos.org, so nothing is compiled in CI or here. It follows the
+# weekly nixpkgs update.
+#
+# Not Zen: linuxPackages_zen 7.3.4-zen1 panics on this PC while the initrd
+# loads the USB controller driver (NULL pointer in process_one_work, 1.6 s
+# into the boot). Before trying another kernel, boot it in QEMU with a USB
+# controller first (kernel.md); the stock 7.3.3 and 7.3.4 pass that.
 { pkgs, ... }:
 
 {
-  boot.kernelPackages = pkgs.linuxPackages_zen;
+  boot.kernelPackages = pkgs.linuxPackages_latest;
 
   # Keep mitigations=auto: L1TF/MDS on this CPU (i7-8086K, Coffee Lake) can
   # cross the VM/host boundary, and the LUKS key is in host memory while the

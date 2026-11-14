@@ -55,10 +55,9 @@
 
   # BFQ I/O scheduler on every disk (SATA SSD/HDD, NVMe, SD): keeps the
   # desktop responsive while something else hammers the disk (game installs,
-  # nix builds), at a small throughput cost on fast NVMe. Zen builds it in
-  # (CONFIG_IOSCHED_BFQ=y); loading it is a no-op then, but keeps the rule
-  # working on kernels where it's a module. LUKS/dm devices have no scheduler
-  # of their own; the disk under them gets BFQ.
+  # nix builds), at a small throughput cost on fast NVMe. It is a module in
+  # the stock kernel, so load it before the udev rule asks for it. LUKS/dm
+  # devices have no scheduler of their own; the disk under them gets BFQ.
   boot.kernelModules = [ "bfq" ];
   services.udev.extraRules = ''
     ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]*|nvme[0-9]*n[0-9]*|mmcblk[0-9]*", ATTR{queue/scheduler}="bfq"
