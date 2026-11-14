@@ -16,7 +16,7 @@ hosts/<name>/        # one folder per machine (hostname = folder name)
 | Host | Machine |
 |---|---|
 | `deck` | Steam Deck (LCD) with [Jovian NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS) |
-| `desktop` | AMD RX 9060 XT PC: Plasma, Secure Boot, local LLMs, Incus for AI-agent VMs |
+| `desktop` | AMD RX 9060 XT PC: Plasma, local LLMs, Incus for AI-agent VMs |
 
 Shared everywhere: fish, pt_BR formats, Tailscale, Bitwarden (also as SSH
 agent and for signing git commits), Home Manager, claude-code, and one look:
@@ -78,14 +78,8 @@ CI's build of `main`.
   her session. The Incus bridges give the VMs only DNS and DHCP from the
   host, not access to its other services; don't make them trusted interfaces.
   VMs and builds yield to the desktop (`hosts/desktop/priorities.nix`).
-- The kernel is Zen from nixpkgs (prebuilt; notes in
+- The kernel is the latest stable one from nixpkgs (prebuilt; notes in
   [hosts/desktop/kernel.md](hosts/desktop/kernel.md)), with `intel_iommu=on`.
-- Secure Boot with Lanzaboote: the desktop signs its own boot files, nothing
-  is signed in CI. The kernel runs in lockdown, so out-of-tree kernel modules
-  don't load. Enforcement is not switched on in the firmware yet; what is
-  left to do, the firmware settings and recovery are in
-  [hosts/desktop/secureboot.md](hosts/desktop/secureboot.md). Once it is on,
-  the installer stick needs Secure Boot switched off to boot.
 - Local LLMs (`hosts/desktop/ai.nix`): Ollama on 127.0.0.1:11434 and llama.cpp
   use Vulkan by default; ROCm builds are next to them (`llama-server-rocm`,
   `ollama-rocm`), and LM Studio is installed.
@@ -124,17 +118,13 @@ socket (`~/.bitwarden-ssh-agent.sock`).
 
 Secrets live encrypted in `secrets/*.yaml` and are decrypted on each machine
 at boot with its SSH host key (`modules/secrets.nix`). `.sops.yaml` lists who
-can decrypt: zoe's age key (Bitwarden `sops: age key`) and every machine,
-except `secrets/secureboot.yaml`, which only zoe and the desktop can decrypt
-(the Deck cannot). Secure Boot keys, firmware steps and recovery:
-[hosts/desktop/secureboot.md](hosts/desktop/secureboot.md).
+can decrypt: zoe's age key (Bitwarden `sops: age key`) and every machine.
 
 ```bash
 SOPS_AGE_KEY=$(bw get password "sops: age key") sops secrets/attic.yaml   # edit
 ```
 
-Currently: `secrets/attic.yaml` (pull token for the private Attic cache) and
-`secrets/secureboot.yaml` (the desktop's Secure Boot keys).
+Currently: `secrets/attic.yaml` (pull token for the private Attic cache).
 The installer adds new machines to `.sops.yaml` automatically.
 
 ## Installing a machine (installer ISO)
@@ -175,10 +165,6 @@ https://nix.zoe.dev.br/nixos-zoe-installer.iso (vps-main, via Tailscale):
    made `/etc/nixos` zoe's (pushing over SSH). Do it soon: until it is
    pushed and built, the machine's automatic updates carry secrets it can't
    decrypt, so it can't use the private cache.
-
-The desktop signs its boot files (Secure Boot). The installer puts the
-signing key on the new disk by itself; the stick only boots with Secure Boot
-switched off in the firmware, so switch it back on afterwards.
 
 While it installs, the header bar has Chromium, Spotify, YouTube, a
 terminal, Bluetooth, sound and network. The image is free software only, so
@@ -296,15 +282,13 @@ exists) use their exact real configuration: today, both the Deck and the
 desktop. A host that isn't installed yet can opt into CI
 with a `ci.nix` (a build-only profile: tmpfs root, no bootloader, never
 exported in `nixosConfigurations`); `hosts/desktop/ci.nix` is one, unused
-now that the real files exist. Nothing is signed in CI:
-Secure Boot signing happens on the desktop (Lanzaboote is off in
-build-only profiles).
+now that the real files exist.
 
 1. Each slow package (`ci.heavyPackages`: kernel, Mesa, PipeWire from
    `modules/ci.nix`, plus per-host extras) builds in its own job, all on
    separate runners at the same time.
 2. Then each host's full system builds, downloading those from the cache.
-   The desktop adds Claude Desktop and Codex as heavy jobs (its Zen kernel
+   The desktop adds Claude Desktop and Codex as heavy jobs (its kernel
    is also listed by `modules/ci.nix`, but it is just downloaded from
    cache.nixos.org). It uses the same cache upload, ccache workflow
    and failure handling as the Deck; no separate desktop-only app job.

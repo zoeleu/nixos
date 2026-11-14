@@ -20,7 +20,6 @@
     ./kde-apps.nix
     ./ai.nix          # local LLMs: ROCm, Ollama, llama.cpp, LM Studio
     ./kernel.nix      # Zen kernel (prebuilt), mitigations, writeback limits
-    ./secureboot.nix  # signed boot chain; signing key restored from SOPS
     ./priorities.nix  # desktop > apps/games > services, builds, VMs
     inputs.claude-desktop.nixosModules.default
   ] ++ lib.optionals (!ciBuild) [

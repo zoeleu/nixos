@@ -29,8 +29,7 @@ hosts/deck/pxe.nix      # PXE helper for the LAN (dnsmasq proxy-DHCP + iPXE -> n
 hosts/deck/touch-unlock.nix # disk passphrase on the touchscreen (unl0kr), boot splash only after unlocking
 hosts/<name>/disko.nix  # disk layout (partitions, LUKS, swap) for hosts installed by the ISO
 hosts/<name>/disk.nix   # which disk (by-id); written by the installer, like hardware-configuration.nix
-hosts/desktop/secureboot.nix # Lanzaboote; signing key from sops (steps and state: secureboot.md)
-hosts/desktop/{kernel,ai,priorities}.nix # Zen + kernel params; local LLMs (ROCm, Ollama); who wins under load
+hosts/desktop/{kernel,ai,priorities}.nix # kernel + its params; local LLMs (ROCm, Ollama); who wins under load
 installer/              # installer as ISO (iso.nix) and network boot (netboot.nix); iso.yml publishes both
                         #   common.nix = kiosk session (sway, tabs) + helpers; gui.py = the window;
                         #   install-nixos.sh = the engine that does everything (also runs alone on a console)
@@ -45,7 +44,7 @@ Hosts:
 - `desktop`: AMD RX 9060 XT PC, Plasma + Plasma Login Manager, LUKS
   (passphrase at boot) then auto-login into zoe, key-only SSH, Incus for
   AI-agent VMs (zoe in the restricted `incus` group, never `incus-admin`).
-  Zen kernel, Secure Boot (Lanzaboote), local LLMs. Installed: its
+  Stock latest kernel, local LLMs. Installed: its
   `hardware-configuration.nix` and `disk.nix` were written by the installer
   ISO, so CI builds the real configuration. `hosts/desktop/ci.nix` is the
   build-only profile (tmpfs root, no bootloader) from before that; a host
@@ -137,10 +136,6 @@ evaluate instead, and leave applying to Zoe.
   untrusted code and autonomous agents in Incus/Podman, not in her session.
   The Incus bridges get only DNS/DHCP from the host; never make them
   `trustedInterfaces`.
-- **Desktop: Secure Boot signs on the machine only** (Lanzaboote,
-  `hosts/desktop/secureboot.nix`, steps in `secureboot.md`). The signing key
-  never goes to CI, GitHub secrets, the Nix store or Attic. The kernel is in
-  lockdown, so out-of-tree kernel modules don't load.
 - One look everywhere: colours and artwork come from `pkgs/artwork.nix`
   only. Don't hard-code the accent colour elsewhere.
 - Keep 2 builds × 4 cores on the Deck (`nix.settings.max-jobs`/`cores`);
@@ -176,8 +171,7 @@ evaluate instead, and leave applying to Zoe.
   console and the GUI get them.
 - The installer edits `.sops.yaml` rules by their `path_regex` and expects
   each rule as `key_groups[0].age` with the host name as line comment; keep
-  that shape. `secrets/secureboot.yaml` is only for hosts that declare
-  `sops.secrets.secureboot-db-key` (never the Deck).
+  that shape.
 - `installer/troubleshooting.md` becomes the assistants' instructions on the
   live installer (CLAUDE.md for Claude Code, AGENTS.md for Codex and
   OpenCode, which are free software and on the image); keep its "never format" rules in sync with the resume logic.

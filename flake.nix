@@ -20,10 +20,6 @@
       url = "github:Mic92/sops-nix/442449fa7b1fe6c692d0103ac9fc8f9e82931cf3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    lanzaboote = {
-      url = "github:nix-community/lanzaboote/v1.2.0";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     # Plasma settings (theme, accent colour, wallpaper) from Home Manager
     plasma-manager = {
       url = "github:nix-community/plasma-manager";
