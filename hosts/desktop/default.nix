@@ -276,6 +276,27 @@
     chatgpt
     # T3 Code (GUI for coding agents) driving Claude Code and Codex
     (t3code.override { enableClaude = true; })
+    poppler-utils # pdftotext, pdftoppm
+    ripgrep
+    htop
+    uv
+    # like build-essential / base-devel
+    gcc
+    gnumake
+    cmake
+    ninja
+    clang # second C/C++ compiler
+    gdb
+    binutils
+    pkg-config
+    autoconf
+    automake
+    libtool
+    bison
+    flex
+    m4
+    patch
+    gettext
     bun
     nodejs_26 # current LTS
     python3
