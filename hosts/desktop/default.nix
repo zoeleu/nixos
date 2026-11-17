@@ -166,6 +166,13 @@
     allowedUDPPorts = [ 53 67 547 ]; # DNS, DHCP, DHCPv6
     allowedTCPPorts = [ 53 ];
   });
+  # Everything is open to the tailnet and to the home LAN (192.168.1.0/24).
+  # The LAN rule skips the Incus bridges so a VM can't get in by spoofing
+  # a 192.168.1.x source address.
+  networking.firewall.trustedInterfaces = [ "tailscale0" ];
+  networking.firewall.extraInputRules = ''
+    iifname != "incusbr*" ip saddr 192.168.1.0/24 accept
+  '';
   # Instances are reachable from the host as <name>.incus (ssh baseplate-dev.incus).
   # The bridge's dnsmasq already answers for them; systemd-resolved sends
   # only *.incus queries there, everything else still goes to Tailscale's
@@ -266,6 +273,8 @@
   };
 
   # --- Apps ---
+  fonts.packages = [ pkgs.cascadia-code ];
+
   environment.systemPackages = with pkgs; [
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
     google-chrome

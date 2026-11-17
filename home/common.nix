@@ -15,7 +15,12 @@ in
   home.username = "zoe";
   home.homeDirectory = "/home/zoe";
 
-  home.packages = [ pkgs.bitwarden-desktop ];
+  home.packages = [
+    pkgs.bitwarden-desktop
+    pkgs.pi-coding-agent
+    # Include the optional dependencies needed by the dmypy daemon.
+    (pkgs.python3.withPackages (ps: [ ps.mypy ] ++ ps.mypy.optional-dependencies.dmypy))
+  ];
 
   # Start Bitwarden at login so the SSH agent is available
   xdg.configFile."autostart/bitwarden.desktop".source =
