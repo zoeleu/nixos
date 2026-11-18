@@ -1,7 +1,8 @@
 name: Finish pushing to Attic
 description: >
   Stops `attic watch-store` (started by ./.github/actions/setup) and pushes
-  the build result's closure, in case anything was missed. Run with
+  the build result's closure, in case anything was missed; each package
+  whose upload fails gets up to 5 retries. Run with
   `if: always()` so packages that finished are kept even when the build failed.
 
 runs:
@@ -12,6 +13,32 @@ runs:
       shell: bash
       run: |
         echo "::group::Live pushes (attic watch-store)"; cat /tmp/attic-watch.log || true; echo "::endgroup::"
+        status=0
         # Final pass: the result's closure (already-cached and cache.nixos.org paths are skipped)
-        if [ -e result ]; then attic push zoe:nixos ./result; fi
+        if [ -e result ] && ! attic push zoe:nixos ./result 2>&1 | tee /tmp/attic-push.log; then
+          # attic tries every path and reports each failure as "❌ <name>: <error>".
+          # The connection to vps-main sometimes drops (timeouts mid-upload), so
+          # give each failed package up to 5 more tries, waiting longer each time.
+          failed=$(sed -n 's/^❌ \([a-z0-9]\{32\}-[^:]*\): .*/\1/p' /tmp/attic-push.log | sort -u)
+          if [ -z "$failed" ]; then
+            echo "::error::attic push failed without naming a package (see above)"
+            status=1
+          fi
+          for name in $failed; do
+            pushed=false
+            for try in 1 2 3 4 5; do
+              sleep $((try * 15))
+              echo "Retrying $name ($try/5)"
+              if attic push --no-closure zoe:nixos "/nix/store/$name"; then
+                pushed=true
+                break
+              fi
+            done
+            if [ "$pushed" = false ]; then
+              echo "::error::could not push $name to Attic after 5 retries"
+              status=1
+            fi
+          done
+        fi
         kill "$(cat /tmp/attic-watch.pid)" 2>/dev/null || true
+        exit "$status"
