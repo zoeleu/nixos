@@ -22,9 +22,35 @@ in
   ];
 
   # Coding agents on every machine (the desktop adds more in
-  # hosts/desktop/home.nix)
-  programs.claude-code.enable = true;
-  programs.pi-coding-agent.enable = true;
+  # hosts/desktop/home.nix). mutableSettings: the agents keep writing their
+  # own state (theme, model, trusted folders...) into the same files, so
+  # Home Manager merges its declarations in instead of owning the files.
+  programs.claude-code = {
+    enable = true;
+    mutableSettings = true;
+    enableMcpIntegration = true;
+  };
+  programs.pi-coding-agent = {
+    enable = true;
+    mutableSettings = true;
+    # MCP for Pi; the adapter reads programs.mcp's ~/.config/mcp/mcp.json
+    settings.packages = [ "npm:pi-mcp-adapter" ];
+    extraPackages = [ pkgs.nodejs ]; # npm, which Pi installs packages with
+  };
+
+  # MCP servers for every agent, written once to ~/.config/mcp/mcp.json and
+  # copied into each agent's own config by its enableMcpIntegration.
+  # The desktop adds more (hosts/desktop/home.nix).
+  programs.mcp = {
+    enable = true;
+    servers = {
+      # NixOS / Home Manager / nix-darwin options and packages
+      # (github:utensils/mcp-nixos)
+      nixos.command = lib.getExe pkgs.mcp-nixos;
+      # Cloudflare's API; each agent asks to sign in (OAuth) the first time
+      cloudflare.url = "https://mcp.cloudflare.com/mcp";
+    };
+  };
 
   # Start Bitwarden at login so the SSH agent is available
   xdg.configFile."autostart/bitwarden.desktop".source =

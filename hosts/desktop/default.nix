@@ -247,6 +247,15 @@
     tpmAccess.enable = true; # device key in the TPM (/dev/tpmrm0 only); the TPM
                              # doesn't hold the disk key on this machine
   };
+  # Claude Code's sign-in token (`claude setup-token`), read by the `claude`
+  # wrapper in ./home.nix; only zoe can read it
+  sops.secrets.claude-code-oauth-token = {
+    sopsFile = ../../secrets/claude-code.yaml;
+    key = "oauth-token";
+    owner = "zoe";
+    mode = "0400";
+  };
+
   # Keeps Claude Desktop (and other apps) signed in outside GNOME
   services.gnome.gnome-keyring.enable = true;
 

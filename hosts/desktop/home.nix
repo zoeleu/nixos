@@ -1,5 +1,5 @@
 # zoe's desktop-only apps (shared parts are in home/common.nix)
-{ pkgs, ... }:
+{ config, lib, pkgs, osConfig, ... }:
 
 let
   # REA (npx rea-agents) only accepts Ghidra 12.1.x (verified with 12.1.4) and
@@ -15,16 +15,74 @@ let
   };
   # REA wants the extracted release root, not the `ghidra` launcher in bin/.
   ghidraInstallDir = "${ghidra}/lib/ghidra";
+
+  # REA (reverse engineering) for every agent, with Ghidra passed directly
+  # instead of through the session environment
+  rea = {
+    command = "npx";
+    args = [ "-y" "rea-agents@6.8.0" "mcp" ];
+    env.GHIDRA_INSTALL_DIR = ghidraInstallDir;
+  };
+
+  # Claude Code signs in with the long-lived token from `claude setup-token`,
+  # kept in sops (secrets/claude-code.yaml, hosts/desktop/default.nix) instead
+  # of in ~/.claude/settings.json. Every `claude` here is this one, T3 Code's
+  # included, so they all find the token.
+  oauthToken = osConfig.sops.secrets.claude-code-oauth-token.path;
+  claude-with-token = pkgs.writeShellScript "claude" ''
+    if [ -z "''${CLAUDE_CODE_OAUTH_TOKEN-}" ] && [ -r ${oauthToken} ]; then
+      CLAUDE_CODE_OAUTH_TOKEN=$(< ${oauthToken})
+      export CLAUDE_CODE_OAUTH_TOKEN
+    fi
+    exec ${pkgs.claude-code}/bin/claude "$@"
+  '';
+  claude-code = pkgs.symlinkJoin {
+    pname = "claude-code";
+    inherit (pkgs.claude-code) version meta;
+    paths = [ pkgs.claude-code ];
+    postBuild = ''
+      rm $out/bin/claude
+      ln -s ${claude-with-token} $out/bin/claude
+    '';
+  };
 in
 {
-  # Coding agents (Claude Code and Pi are in home/common.nix). The codex
-  # package is the overlay's (overlays/codex.nix), as everywhere else.
-  programs.codex.enable = true;
-  programs.opencode.enable = true;
+  # Coding agents (Claude Code and Pi are in home/common.nix, and so are the
+  # MCP servers every machine gets). The codex package is the overlay's
+  # (overlays/codex.nix), as everywhere else.
+  programs.mcp.servers = { inherit rea; };
+  programs.claude-code.package = claude-code;
+  programs.codex = {
+    enable = true;
+    mutableSettings = true;
+    enableMcpIntegration = true;
+    # Codex's own timeouts for REA (Ghidra analyses are slow). Codex takes
+    # a server from here whole instead of merging it with programs.mcp's.
+    settings.mcp_servers.rea = rea // {
+      startup_timeout_sec = 30;
+      tool_timeout_sec = 450;
+    };
+  };
+  programs.opencode = {
+    enable = true;
+    mutableSettings = true;
+    enableMcpIntegration = true;
+  };
   programs.antigravity = {
     enable = true; # Google's agent IDE (VS Code based)
     package = pkgs.antigravity-ide; # nixpkgs renamed it
   };
+  programs.antigravity-cli = {
+    enable = true;
+    mutableSettings = true;
+    enableMcpIntegration = true;
+  };
+  # With mutableSettings OpenCode finds Home Manager's config through
+  # OPENCODE_CONFIG, which the module sets for shells only; give it to apps
+  # started outside a shell too (T3 Code, the desktop), like SSH_AUTH_SOCK in
+  # home/common.nix.
+  systemd.user.sessionVariables.OPENCODE_CONFIG =
+    "${config.xdg.configHome}/opencode/home-manager.json";
 
   programs.vscode = {
     enable = true;
@@ -50,13 +108,14 @@ in
     (discord.override { withVencord = true; })
     spotify
     # T3 Code (GUI for coding agents) driving Claude Code and Codex
-    (t3code.override { enableClaude = true; })
+    (t3code.override {
+      enableClaude = true;
+      claude-code = config.programs.claude-code.finalPackage; # the one above
+    })
     ghidra
     jdk21 # `java` on PATH: REA runs Ghidra headless and needs a full JDK 21+
   ];
 
-  # Same two places as SSH_AUTH_SOCK in home/common.nix: login shells and
-  # systemd user services, which is where the agents' MCP servers start from.
+  # For running Ghidra/REA by hand; the MCP server gets it from `rea` above
   home.sessionVariables.GHIDRA_INSTALL_DIR = ghidraInstallDir;
-  systemd.user.sessionVariables.GHIDRA_INSTALL_DIR = ghidraInstallDir;
 }
