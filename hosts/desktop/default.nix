@@ -320,6 +320,7 @@
     podman-compose
     mangohud
     prismlauncher
+    hydralauncher # game launcher (no Home Manager module for it)
     usbutils # lsusb
     libnfc   # NFC tools; reader set up above
     jq
