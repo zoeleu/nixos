@@ -278,13 +278,10 @@
   environment.systemPackages = with pkgs; [
     inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
     google-chrome
-    codex
-    opencode # open-source terminal coding agent
     # ChatGPT desktop app (OpenAI's Linux build; includes the Codex app),
-    # using the codex above (overlays/codex.nix) instead of its bundled copy
+    # using nixpkgs' codex (overlays/codex.nix) instead of its bundled copy.
+    # The coding agents themselves are in ./home.nix.
     chatgpt
-    # T3 Code (GUI for coding agents) driving Claude Code and Codex
-    (t3code.override { enableClaude = true; })
     poppler-utils # pdftotext, pdftoppm
     ripgrep
     htop

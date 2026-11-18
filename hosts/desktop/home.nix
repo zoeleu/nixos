@@ -17,6 +17,15 @@ let
   ghidraInstallDir = "${ghidra}/lib/ghidra";
 in
 {
+  # Coding agents (Claude Code and Pi are in home/common.nix). The codex
+  # package is the overlay's (overlays/codex.nix), as everywhere else.
+  programs.codex.enable = true;
+  programs.opencode.enable = true;
+  programs.antigravity = {
+    enable = true; # Google's agent IDE (VS Code based)
+    package = pkgs.antigravity-ide; # nixpkgs renamed it
+  };
+
   programs.vscode = {
     enable = true;
     package = pkgs.vscode; # Microsoft's build
@@ -40,6 +49,8 @@ in
   home.packages = with pkgs; [
     (discord.override { withVencord = true; })
     spotify
+    # T3 Code (GUI for coding agents) driving Claude Code and Codex
+    (t3code.override { enableClaude = true; })
     ghidra
     jdk21 # `java` on PATH: REA runs Ghidra headless and needs a full JDK 21+
   ];

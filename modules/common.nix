@@ -107,8 +107,9 @@
   programs.firefox.enable = true;
   programs.nix-ld.enable = true; # run downloaded (non-Nix) Linux binaries
 
+  # Coding agents (Claude Code, Codex, ...) are zoe's, in Home Manager:
+  # home/common.nix and hosts/desktop/home.nix
   environment.systemPackages = with pkgs; [
-    claude-code
     git # this config is a git repo
   ];
 }

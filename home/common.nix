@@ -17,10 +17,14 @@ in
 
   home.packages = [
     pkgs.bitwarden-desktop
-    pkgs.pi-coding-agent
     # Include the optional dependencies needed by the dmypy daemon.
     (pkgs.python3.withPackages (ps: [ ps.mypy ] ++ ps.mypy.optional-dependencies.dmypy))
   ];
+
+  # Coding agents on every machine (the desktop adds more in
+  # hosts/desktop/home.nix)
+  programs.claude-code.enable = true;
+  programs.pi-coding-agent.enable = true;
 
   # Start Bitwarden at login so the SSH agent is available
   xdg.configFile."autostart/bitwarden.desktop".source =
