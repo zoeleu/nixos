@@ -52,6 +52,9 @@ in
     };
   };
 
+  # Element, the Matrix client
+  programs.element-desktop.enable = true;
+
   # Start Bitwarden at login so the SSH agent is available
   xdg.configFile."autostart/bitwarden.desktop".source =
     "${pkgs.bitwarden-desktop}/share/applications/bitwarden.desktop";
