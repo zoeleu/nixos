@@ -1,5 +1,6 @@
 # Desktop PC: AMD Radeon RX 9060 XT, 1440p @ 280 Hz, Plasma.
-# NixOS on its own drive (Windows on another); LUKS full-disk encryption
+# NixOS on its own drive (the Samsung SATA SSD is a VM's disk, see Incus);
+# LUKS full-disk encryption
 # unlocked by passphrase at boot, then automatic login into zoe.
 #
 # Installed with the installer ISO (`install-nixos`, see installer/), which
@@ -21,6 +22,7 @@
     ./ai.nix          # local LLMs: ROCm, Ollama, llama.cpp, LM Studio
     ./kernel.nix      # Zen kernel (prebuilt), mitigations, writeback limits
     ./priorities.nix  # desktop > apps/games > services, builds, VMs
+    ./vm-disks.nix    # whole host disks given to Incus VMs (Samsung SSD -> baseplate-dev)
     inputs.claude-desktop.nixosModules.default
   ] ++ lib.optionals (!ciBuild) [
     ./hardware-configuration.nix # generated with --no-filesystems: disko owns the disks
