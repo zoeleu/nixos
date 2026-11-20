@@ -111,7 +111,11 @@ in
     # a WireGuard tunnel in its own network namespace (asks polkit for root,
     # needs `wg`: wireguard-tools in hosts/desktop/default.nix). Pinned to a
     # release tag on purpose: it runs things as root, so updates are by hand.
+    # useFHSEnv = false: the default FHS build runs Discord inside bubblewrap,
+    # where /run/wrappers/bin isn't mounted and setuid is off, so the plugin
+    # finds no working pkexec and can't set up its namespace.
     (discord.override {
+      useFHSEnv = false;
       withVencord = true;
       vencord = vencord.overrideAttrs (old: {
         postPatch =
