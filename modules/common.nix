@@ -106,6 +106,12 @@
 
   programs.firefox.enable = true;
   programs.nix-ld.enable = true; # run downloaded (non-Nix) Linux binaries
+  # AppImages: binfmt lets them run directly (./App.AppImage) through
+  # appimage-run's FHS environment
+  programs.appimage = {
+    enable = true;
+    binfmt = true;
+  };
 
   # Coding agents (Claude Code, Codex, ...) are zoe's, in Home Manager:
   # home/common.nix and hosts/desktop/home.nix
