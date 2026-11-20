@@ -15,6 +15,7 @@
   ci.heavyPackages = {
     claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
     inherit (pkgs) codex; # overlays/codex.nix, so never in cache.nixos.org
+    zed = config.home-manager.users.zoe.programs.zed-editor.package; # official flake, built from source
   };
 
   imports = [
@@ -329,6 +330,11 @@
 
   home-manager.users.zoe = {
     imports = [ ./home.nix ];
+    # Zed from its official flake (https://wiki.nixos.org/wiki/Zed)
+    programs.zed-editor = {
+      enable = true;
+      package = inputs.zed.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    };
     home.stateVersion = "26.11"; # first install's version, never change
   };
 
