@@ -114,6 +114,7 @@ in
     })
     ghidra
     jdk21 # `java` on PATH: REA runs Ghidra headless and needs a full JDK 21+
+    jetbrains-toolbox # installs/updates JetBrains IDEs into ~/.local/share
   ];
 
   # For running Ghidra/REA by hand; the MCP server gets it from `rea` above
