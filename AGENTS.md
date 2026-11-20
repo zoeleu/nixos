@@ -60,7 +60,15 @@ Hosts:
   fscrypt, desktop environment, kernel and `nix.settings.max-jobs` are
   per host on purpose.
 - New flake inputs: add `inputs.nixpkgs.follows = "nixpkgs"` when the input
-  has a nixpkgs input. Modules get `inputs` through `specialArgs`.
+  has a nixpkgs input (one nixpkgs: our weekly security updates, matching
+  graphics libraries, no duplicates). Exception: an input that ships its
+  own binary cache and updates its lock regularly (`zed`) keeps its own
+  nixpkgs, so its packages download from that cache instead of compiling;
+  add the cache to the host's `nix.settings.substituters` (CI picks it up)
+  and the package to `ci.heavyPackages` as fallback. Say why in a comment
+  next to the input. Dropping a `follows` later: `nix flake lock` then locks
+  the input's nixpkgs to the newest commit, not the input's own pin, so the
+  cache misses; copy that node from the input's own flake.lock. Modules get `inputs` through `specialArgs`.
 - A slow-to-compile package for one host: add it to `ci.heavyPackages` in
   that host's `default.nix`. Kernel, graphics drivers and PipeWire are
   already added for every host by `modules/ci.nix`.

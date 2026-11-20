@@ -27,11 +27,10 @@
       inputs.home-manager.follows = "home-manager";
     };
     # Zed editor from its official flake (newer than nixpkgs' zed-editor).
-    # Following our nixpkgs means zed.cachix.org has no match; CI builds it.
-    zed = {
-      url = "github:zed-industries/zed";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # Not following our nixpkgs on purpose: with Zed's own pin the package
+    # matches what Zed pushes to zed.cachix.org (hosts/desktop), so it
+    # downloads instead of compiling. Zed updates its lock often.
+    zed.url = "github:zed-industries/zed";
     # Declarative disk partitioning, used by the installer ISO
     disko = {
       url = "github:nix-community/disko";

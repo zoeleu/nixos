@@ -15,8 +15,15 @@
   ci.heavyPackages = {
     claude-desktop = inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default;
     inherit (pkgs) codex; # overlays/codex.nix, so never in cache.nixos.org
-    zed = config.home-manager.users.zoe.programs.zed-editor.package; # official flake, built from source
+    # Zed's flake; usually fetched from zed.cachix.org, built by CI when not
+    zed = config.home-manager.users.zoe.programs.zed-editor.package;
   };
+
+  # Zed's own binary cache, for the zed flake input (CI uses it too)
+  nix.settings.substituters = [ "https://zed.cachix.org" ];
+  nix.settings.trusted-public-keys = [
+    "zed.cachix.org-1:/pHQ6dpMsAZk2DiP4WCL0p9YDNKWj2Q5FL20bNmw1cU="
+  ];
 
   imports = [
     ./kde-apps.nix
