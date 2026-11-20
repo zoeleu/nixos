@@ -105,7 +105,31 @@ in
   services.tailscale-systray.enable = true;
 
   home.packages = with pkgs; [
-    (discord.override { withVencord = true; })
+    # Discord with Vencord, plus the GoLiveBypass userplugin (Go Live and
+    # camera for Brazilian accounts). Vencord compiles userplugins in, so
+    # it's copied into src/userplugins before the build. The plugin brings up
+    # a WireGuard tunnel in its own network namespace (asks polkit for root,
+    # needs `wg`: wireguard-tools in hosts/desktop/default.nix). Pinned to a
+    # release tag on purpose: it runs things as root, so updates are by hand.
+    (discord.override {
+      withVencord = true;
+      vencord = vencord.overrideAttrs (old: {
+        postPatch =
+          (old.postPatch or "")
+          + ''
+            mkdir -p src/userplugins
+            cp -r ${
+              fetchFromGitHub {
+                owner = "bezumiya";
+                repo = "GoLiveBypass";
+                tag = "v2.0.17";
+                hash = "sha256-JPazWxLekZ+pEMyq5WpEtkCDjvyMkq2ShgL3yU7NajQ=";
+              }
+            }/goLiveBypass src/userplugins/goLiveBypass
+            chmod -R u+w src/userplugins
+          '';
+      });
+    })
     spotify
     # T3 Code (GUI for coding agents) driving Claude Code and Codex
     (t3code.override {

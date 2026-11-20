@@ -301,6 +301,7 @@
     # using nixpkgs' codex (overlays/codex.nix) instead of its bundled copy.
     # The coding agents themselves are in ./home.nix.
     chatgpt
+    wireguard-tools # `wg`, for Discord's GoLiveBypass tunnel (./home.nix)
     poppler-utils # pdftotext, pdftoppm
     ripgrep
     htop
